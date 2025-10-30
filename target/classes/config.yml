@@ -1,0 +1,28 @@
+# Redstone Detector Settings / Настройки Redstone Detector
+
+language: en
+
+# Critical TPS level for freezing / Критический уровень TPS для заморозки
+critical-tps: 15.0
+
+# The maximum allowed amount of redstone in a chunk / Максимально допустимое количество редстоуна в чанке
+max-redstone: 100
+
+#  Maximum allowed number of entities in a chunk / Максимально допустимое количество сущностей в чанке
+max-entities: 100
+
+# It's not working yet / Пока не работает
+freeze-duration: 120
+
+# The number of chunks scanned per tick / Количество чанков, сканируемых за один тик
+chunks-per-tick: 3
+
+# Check redstone at low TPS / Проверять редстоун при низком TPS
+scan-on-low-tps: true
+
+# Chunk data storage time (hours) / Время хранения данных о чанках (часов)
+chunk-data-retention: 24
+
+#  So far, the plugin is very crude.
+#  It was made purely for private servers, but I don't have any, so I decided to make it for everyone.
+#  Therefore, join my discord server. https:/discord.gg/PXDzCQZUch

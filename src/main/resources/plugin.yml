@@ -1,0 +1,25 @@
+name: RedstoneDetector
+version: '1.0.0-SNAPSHOT'
+main: ru.stepanyaa.redstoneDetector.RedstoneDetector
+api-version: "1.16"
+authors: [Stepanyaa]
+description: A plugin for protecting servers from lag machines.
+commands:
+  redstonedetector:
+    description: The main plugin command
+    usage: /redstonedetector [reload|gui|redstone|stopredstone]
+    aliases: [rd, reddetect]
+  rd:
+    description: The alias of the main team
+    usage: /rd [reload|gui|redstone|stopredstone]
+permissions:
+  redstonedetector.admin:
+    default: op
+    children:
+      redstonedetector.command: true
+  redstonedetector.command:
+    default: false
+    children:
+      redstonedetector.scan: true
+  redstonedetector.scan:
+    default: op
