@@ -51,7 +51,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class RedstoneDetector extends JavaPlugin implements Listener, TabCompleter {
 
-    public record ChunkCoordinate(String world, int x, int z) {
+    public static class ChunkCoordinate {
+        private final String world;
+        private final int x;
+        private final int z;
+
+        public ChunkCoordinate(String world, int x, int z) {
+            this.world = world;
+            this.x = x;
+            this.z = z;
+        }
+
+        public String world() { return world; }
+        public int x() { return x; }
+        public int z() { return z; }
+
         @Override
         public String toString() {
             return world + ";" + x + ";" + z;
@@ -65,6 +79,23 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         public String toDisplayString() {
             return "[" + x + ", " + z + "]";
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ChunkCoordinate that = (ChunkCoordinate) o;
+            return x == that.x && z == that.z && Objects.equals(world, that.world);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(world, x, z);
+        }
+    }
+
+    public GuiManager getGuiManager() {
+        return guiManager;
     }
 
     public static class ChunkData {
@@ -93,7 +124,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private long lastTPSWarning = 0;
     private final long TPS_WARNING_COOLDOWN = 10000;
     private double lastReportedTPS = 20.0;
-    private static final String CURRENT_VERSION = "1.0.0";
+    private static final String CURRENT_VERSION = "1.0.1";
     private boolean isFirstEnable = true;
 
     private FileConfiguration messagesConfig;
@@ -103,14 +134,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     @Override
     public void onEnable() {
-        // Сначала загружаем сообщения
-        loadMessages();
-
         getLogger().info(getMessage("plugin.startup", "======== RedstoneDetector STARTING ========"));
         saveDefaultConfig();
         reloadConfig();
         loadConfig();
 
+        loadMessages();
         updateConfigFile();
         updateMessagesFiles();
 
@@ -119,11 +148,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
         initializeRedstoneMaterials();
 
-        // Теперь инициализируем guiManager после загрузки сообщений
         this.guiManager = new GuiManager(this);
         guiManager.loadPlayerStates();
 
-
+        getServer().getPluginManager().registerEvents(new ChatListener(this), this);
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(guiManager, this);
         registerCommands();
@@ -135,6 +163,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         int pluginId = 27778;
         Metrics metrics = new Metrics(this, pluginId);
     }
+
     private void updateConfigFile() {
         File configFile = new File(getDataFolder(), "config.yml");
         if (!configFile.exists()) {
@@ -156,12 +185,9 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
         if (getResource("config.yml") != null) {
             try {
-                // Сохраняем новый файл
                 saveResource("config.yml", true);
                 getLogger().info(getMessage("warning.config-file-updated", "Updated config.yml to version %version%.")
                         .replace("%version%", CURRENT_VERSION));
-
-                // Устанавливаем версию в новом файле
                 YamlConfiguration newConfig = YamlConfiguration.loadConfiguration(configFile);
                 newConfig.set("config-version", CURRENT_VERSION);
                 newConfig.save(configFile);
@@ -172,6 +198,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             getLogger().warning(getMessage("warning.config-file-not-found", "Resource config.yml not found in plugin!"));
         }
     }
+
     private void updateMessagesFiles() {
         for (String lang : SUPPORTED_LANGUAGES) {
             String fileName = "messages_" + lang + ".yml";
@@ -203,13 +230,11 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
             if (getResource(fileName) != null) {
                 try {
-                    // Сохраняем новый файл
                     saveResource(fileName, true);
                     getLogger().info(getMessage("warning.messages-file-updated", "Updated messages file %file% to version %version%.")
                             .replace("%file%", fileName)
                             .replace("%version%", CURRENT_VERSION));
 
-                    // Устанавливаем версию в новом файле
                     YamlConfiguration newConfig = YamlConfiguration.loadConfiguration(messageFile);
                     newConfig.set("version", CURRENT_VERSION);
                     newConfig.save(messageFile);
@@ -222,6 +247,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             }
         }
     }
+
     private void loadMessages() {
         this.language = getConfig().getString("language", "en");
         if (!Arrays.asList(SUPPORTED_LANGUAGES).contains(this.language)) {
@@ -232,7 +258,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         String messagesFileName = "messages_" + language + ".yml";
         messagesFile = new File(getDataFolder(), messagesFileName);
 
-        // Инициализируем messagesConfig пустой конфигурацией по умолчанию
         messagesConfig = new YamlConfiguration();
 
         try {
@@ -247,7 +272,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     public String getMessage(String key, String defaultValue) {
-        // Добавляем дополнительную проверку на null
         if (messagesConfig == null) {
             return ChatColor.translateAlternateColorCodes('&', defaultValue);
         }
@@ -277,7 +301,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     @Override
     public void onDisable() {
-        // Добавляем проверки на null для всех компонентов
         if (guiManager != null) {
             guiManager.savePlayerStates();
         }
@@ -300,29 +323,37 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             }
             return handleSubCommand(sender, args);
         }
+        if (command.equalsIgnoreCase("rdcancel") && sender instanceof Player) {
+            ChatListener.cancelSearch((Player) sender);
+            return true;
+        }
         return false;
     }
 
     private boolean handleSubCommand(CommandSender sender, String[] args) {
         String subCommand = args[0].toLowerCase();
-        return switch (subCommand) {
-            case "reload" -> reloadCommand(sender);
-            case "gui" -> openGuiCommand(sender);
-            case "redstone" -> redstoneCommand(sender, args);
-            case "stopredstone" -> stopRedstoneCommand(sender);
-            case "scan" -> scanCommand(sender);
-            default -> {
-                sendHelp(sender);
-                yield true;
-            }
-        };
+        if (subCommand.equals("reload")) {
+            return reloadCommand(sender);
+        } else if (subCommand.equals("gui")) {
+            return openGuiCommand(sender);
+        } else if (subCommand.equals("redstone")) {
+            return redstoneCommand(sender, args);
+        } else if (subCommand.equals("stopredstone")) {
+            return stopRedstoneCommand(sender);
+        } else if (subCommand.equals("scan")) {
+            return scanCommand(sender);
+        } else {
+            sendHelp(sender);
+            return true;
+        }
     }
 
     private boolean openGuiCommand(CommandSender sender) {
-        if (!(sender instanceof Player player)) {
+        if (!(sender instanceof Player)) {
             sender.sendMessage(ChatColor.RED + getMessage("command.player_only", "This command is for players only!"));
             return true;
         }
+        Player player = (Player) sender;
         if (!sender.hasPermission("redstonedetector.gui")) {
             sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_gui", "You do not have permission to use the GUI!"));
             return true;
@@ -337,6 +368,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             return true;
         }
         reloadConfig();
+        updateMessagesFiles();
         loadConfig();
         loadMessages();
         sender.sendMessage(ChatColor.GREEN + getMessage("command.reload_success", "Configuration reloaded!"));
@@ -352,20 +384,26 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             sender.sendMessage(ChatColor.RED + getMessage("command.redstone_usage", "Usage: /redstonedetector redstone [freeze|unfreeze|status]"));
             return true;
         }
-        switch (args[1].toLowerCase()) {
-            case "freeze" -> {
-                setFreezeRedstone(true, sender.getName());
-                sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_frozen", "Redstone frozen!"));
-            }
-            case "unfreeze" -> {
-                setFreezeRedstone(false, sender.getName());
-                monitoringEnabled = true;
-                sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_unfrozen", "Redstone unfrozen!"));
-            }
-            case "status" -> sender.sendMessage(ChatColor.YELLOW + getMessage("command.redstone_status", "Redstone status: {status}").replace("{status}", (freezeRedstone ? ChatColor.RED + getMessage("command.redstone_status_frozen", "FROZEN") : ChatColor.GREEN + getMessage("command.redstone_status_active", "ACTIVE"))));
-            default -> sender.sendMessage(ChatColor.RED + getMessage("command.redstone_usage", "Usage: /redstonedetector redstone [freeze|unfreeze|status]"));
+        String action = args[1].toLowerCase();
+        if (action.equals("freeze")) {
+            setFreezeRedstone(true, sender.getName());
+            sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_frozen", "Redstone frozen!"));
+            return true;
+        } else if (action.equals("unfreeze")) {
+            setFreezeRedstone(false, sender.getName());
+            monitoringEnabled = true;
+            sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_unfrozen", "Redstone unfrozen!"));
+            return true;
+        } else if (action.equals("status")) {
+            String status = freezeRedstone ?
+                    ChatColor.RED + getMessage("command.redstone_status_frozen", "FROZEN") :
+                    ChatColor.GREEN + getMessage("command.redstone_status_active", "ACTIVE");
+            sender.sendMessage(ChatColor.YELLOW + getMessage("command.redstone_status", "Redstone status: {status}").replace("{status}", status));
+            return true;
+        } else {
+            sender.sendMessage(ChatColor.RED + getMessage("command.redstone_usage", "Usage: /redstonedetector redstone [freeze|unfreeze|status]"));
+            return true;
         }
-        return true;
     }
 
     private boolean stopRedstoneCommand(CommandSender sender) {
@@ -472,8 +510,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                         chunkDataConfig.set(key, null);
                         changed = true;
                     } else {
-                        Bukkit.getScheduler().runTaskLater(this, () -> chunkMap.remove(coord),
-                                (600000 - (currentTime - data.clearedTime)) / 50);
+                        Bukkit.getScheduler().runTaskLater(this, new Runnable() {
+                            @Override
+                            public void run() {
+                                chunkMap.remove(coord);
+                            }
+                        }, (600000 - (currentTime - data.clearedTime)) / 50);
                     }
                 } else if (currentTime - data.lastScanned > getConfig().getInt("chunk-data-retention", 24) * 3600000L) {
                     chunkDataConfig.set(key, null);
@@ -521,7 +563,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             @Override
             public void run() {
                 saveChunkData();
-                getLogger().info(getMessage("data.autosave", "Data automatically saved"));
             }
         }.runTaskTimer(this, 20 * 60 * 5, 20 * 60 * 5);
     }
@@ -613,7 +654,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     private void forceFullRedstoneScan() {
-        getLogger().info(getMessage("chunk.scan_forced", "Forced scanning of all chunks due to low TPS"));
+        getLogger().warning(getMessage("chunk.scan_forced", "Forced scanning of all chunks due to low TPS"));
         for (World world : getServer().getWorlds()) {
             for (Chunk chunk : world.getLoadedChunks()) {
                 if (chunk.isLoaded()) {
@@ -628,7 +669,11 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
         World world = chunk.getWorld();
         ChunkCoordinate coord = new ChunkCoordinate(world.getName(), chunk.getX(), chunk.getZ());
-        ChunkData data = chunkMap.computeIfAbsent(coord, k -> new ChunkData());
+        ChunkData data = chunkMap.get(coord);
+        if (data == null) {
+            data = new ChunkData();
+            chunkMap.put(coord, data);
+        }
 
         if (data.clearedByAdmin) return;
 
@@ -646,9 +691,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             }
         }
 
-        entityCount = (int) Arrays.stream(chunk.getEntities())
-                .filter(e -> !(e instanceof Player))
-                .count();
+        entityCount = 0;
+        for (org.bukkit.entity.Entity entity : chunk.getEntities()) {
+            if (!(entity instanceof Player)) {
+                entityCount++;
+            }
+        }
 
         data.redstoneCount.set(redstoneCount);
         data.entityCount.set(entityCount);
@@ -747,7 +795,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         ChunkData data = chunkMap.get(coord);
         if (data != null) {
             player.sendMessage(ChatColor.GOLD + getMessage("chunk.details.header", "Chunk Details {coord}").replace("{coord}", coord.toDisplayString()));
-            player.sendMessage(ChatColor.GRAY + getMessage("chunk.details.world", "World: {world}").replace("{world}", coord.world));
+            player.sendMessage(ChatColor.GRAY + getMessage("chunk.details.world", "World: {world}").replace("{world}", coord.world()));
             player.sendMessage(ChatColor.RED + getMessage("chunk.details.redstone", "Redstone: {count}").replace("{count}", String.valueOf(data.redstoneCount.get())));
             player.sendMessage(ChatColor.GREEN + getMessage("chunk.details.entities", "Entities: {count}").replace("{count}", String.valueOf(data.entityCount.get())));
         } else {
@@ -756,18 +804,18 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     public void teleportToChunk(Player player, ChunkCoordinate coord) {
-        World world = getServer().getWorld(coord.world);
+        World world = getServer().getWorld(coord.world());
         if (world != null) {
             Location loc = new Location(
                     world,
-                    coord.x * 16 + 8,
-                    world.getHighestBlockYAt(coord.x * 16 + 8, coord.z * 16 + 8) + 1,
-                    coord.z * 16 + 8
+                    coord.x() * 16 + 8,
+                    world.getHighestBlockYAt(coord.x() * 16 + 8, coord.z() * 16 + 8) + 1,
+                    coord.z() * 16 + 8
             );
             player.teleport(loc);
             player.sendMessage(ChatColor.GREEN + getMessage("chunk.teleport_success", "Teleported to chunk {coord}").replace("{coord}", coord.toDisplayString()));
         } else {
-            player.sendMessage(ChatColor.RED + getMessage("chunk.world_not_found", "World '{world}' not found!").replace("{world}", coord.world));
+            player.sendMessage(ChatColor.RED + getMessage("chunk.world_not_found", "World '{world}' not found!").replace("{world}", coord.world()));
         }
     }
 
@@ -777,10 +825,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     public void disableRedstoneInChunk(ChunkCoordinate coord, String initiator) {
-        World world = getServer().getWorld(coord.world);
+        World world = getServer().getWorld(coord.world());
         if (world == null) return;
 
-        Chunk chunk = world.getChunkAt(coord.x, coord.z);
+        Chunk chunk = world.getChunkAt(coord.x(), coord.z());
         if (!chunk.isLoaded()) return;
 
         Map<Location, Material> backup = new HashMap<>();
@@ -806,7 +854,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             if (data != null) {
                 data.clearedByAdmin = true;
                 data.clearedTime = System.currentTimeMillis();
-                Bukkit.getScheduler().runTaskLater(this, () -> chunkMap.remove(coord), 20 * 60 * 10);
+                Bukkit.getScheduler().runTaskLater(this, new Runnable() {
+                    @Override
+                    public void run() {
+                        chunkMap.remove(coord);
+                    }
+                }, 20 * 60 * 10);
             }
             getLogger().info(getMessage("chunk.redstone_removed_log", "Removed {count} redstone blocks in chunk: {coord}")
                     .replace("{count}", String.valueOf(removed))

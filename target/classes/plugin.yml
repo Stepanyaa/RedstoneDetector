@@ -1,9 +1,10 @@
 name: RedstoneDetector
-version: '1.0.0-SNAPSHOT'
+version: '1.0.1'
 main: ru.stepanyaa.redstoneDetector.RedstoneDetector
 api-version: "1.16"
 authors: [Stepanyaa]
 description: A plugin for protecting servers from lag machines.
+website: https://discord.com/invite/PXDzCQZUch
 commands:
   redstonedetector:
     description: The main plugin command
@@ -12,6 +13,9 @@ commands:
   rd:
     description: The alias of the main team
     usage: /rd [reload|gui|redstone|stopredstone]
+  rdcancel:
+    description: Cancel chunk search
+    usage: /rdcancel
 permissions:
   redstonedetector.admin:
     default: op

@@ -72,9 +72,9 @@ public class GuiManager implements Listener {
         Inventory gui = Bukkit.createInventory(null, 45, title);
         List<World> worlds = new ArrayList<>(Bukkit.getWorlds());
         int[] centerSlots = {12, 13, 14, 21, 22, 23, 30, 31, 32};
-        int slotIndex = 0;
 
-        for (World world : worlds) {
+        for (int i = 0; i < Math.min(worlds.size(), centerSlots.length); i++) {
+            World world = worlds.get(i);
             Material icon = getWorldIcon(world);
             ItemStack item = new ItemStack(icon);
             ItemMeta meta = item.getItemMeta();
@@ -84,10 +84,7 @@ public class GuiManager implements Listener {
                 meta.setLore(Collections.singletonList(ChatColor.GRAY + viewChunksText));
                 item.setItemMeta(meta);
             }
-
-            if (slotIndex < centerSlots.length) {
-                gui.setItem(centerSlots[slotIndex++], item);
-            }
+            gui.setItem(centerSlots[i], item);
         }
 
         PlayerGuiState state = new PlayerGuiState(GuiState.WORLD_SELECTION);
@@ -96,56 +93,77 @@ public class GuiManager implements Listener {
     }
 
     private Material getWorldIcon(World world) {
-        return switch (world.getEnvironment()) {
-            case NETHER -> Material.NETHERRACK;
-            case THE_END -> Material.END_STONE;
-            default -> Material.GRASS_BLOCK;
-        };
+        if (world.getEnvironment() == World.Environment.NETHER) {
+            return Material.NETHERRACK;
+        } else if (world.getEnvironment() == World.Environment.THE_END) {
+            return Material.END_STONE;
+        } else {
+            return Material.GRASS_BLOCK;
+        }
     }
 
     public void openChunksGUI(Player player, String worldName, int page) {
         List<Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData>> filteredChunks = new ArrayList<>();
 
-        long retentionTime = System.currentTimeMillis() - (24 * 60 * 60 * 1000);
+        long retentionTime = System.currentTimeMillis() - (plugin.getConfig().getLong("chunk-data-retention", 24) * 60 * 60 * 1000L);
 
         for (Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> entry : plugin.getChunkMap().entrySet()) {
-            if (entry.getKey().world().equals(worldName) &&
-                    entry.getValue().lastScanned >= retentionTime &&
-                    (entry.getValue().redstoneCount.get() > plugin.getMaxRedstone() ||
-                            entry.getValue().entityCount.get() > plugin.getMaxEntities()) &&
-                    !entry.getValue().clearedByAdmin) {
+            RedstoneDetector.ChunkCoordinate coord = entry.getKey();
+            RedstoneDetector.ChunkData data = entry.getValue();
+
+            if (coord.world().equals(worldName) &&
+                    data.lastScanned >= retentionTime &&
+                    !data.clearedByAdmin &&
+                    (data.redstoneCount.get() > plugin.getMaxRedstone() || data.entityCount.get() > plugin.getMaxEntities())) {
                 filteredChunks.add(entry);
             }
         }
 
-        filteredChunks.sort((a, b) -> {
-            int xCompare = Integer.compare(a.getKey().x(), b.getKey().x());
-            if (xCompare != 0) return xCompare;
-            return Integer.compare(a.getKey().z(), b.getKey().z());
+        filteredChunks.sort(new Comparator<Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData>>() {
+            @Override
+            public int compare(Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> a,
+                               Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> b) {
+                int xDiff = Integer.compare(a.getKey().x(), b.getKey().x());
+                return xDiff != 0 ? xDiff : Integer.compare(a.getKey().z(), b.getKey().z());
+            }
         });
 
         int totalPages = Math.max(1, (int) Math.ceil((double) filteredChunks.size() / 45));
-        if (page < 0) page = 0;
-        if (page >= totalPages) page = totalPages > 0 ? totalPages - 1 : 0;
+        page = Math.max(0, Math.min(page, totalPages - 1));
 
         String title = plugin.getMessage("gui.chunk_list_title", "Chunks in {world} (Page {page}/{total})")
                 .replace("{world}", worldName)
                 .replace("{page}", String.valueOf(page + 1))
                 .replace("{total}", String.valueOf(totalPages));
+
         Inventory gui = Bukkit.createInventory(null, 54, title);
+
+        ItemStack border = createItem(Material.AIR, " ");
+        for (int i = 0; i < 9; i++) {
+            gui.setItem(i, border);
+        }
+
+        ItemStack compass = createItem(Material.COMPASS,
+                ChatColor.AQUA + plugin.getMessage("gui.search_compass_title", "Search Chunk"));
+        ItemMeta compassMeta = compass.getItemMeta();
+        if (compassMeta != null) {
+            compassMeta.setLore(Arrays.asList(
+                    ChatColor.GRAY + plugin.getMessage("gui.search_compass_line1", "Click to search for a chunk"),
+                    ChatColor.GRAY + plugin.getMessage("gui.search_compass_line2", "Supports chunk coordinates (e.g. 5 -3)")
+            ));
+            compass.setItemMeta(compassMeta);
+        }
+        gui.setItem(4, compass);
+
         int start = page * 45;
         int end = Math.min(start + 45, filteredChunks.size());
 
         for (int i = start; i < end; i++) {
             Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> entry = filteredChunks.get(i);
-            RedstoneDetector.ChunkCoordinate coord = entry.getKey();
-            RedstoneDetector.ChunkData data = entry.getValue();
-
-            ItemStack item = createChunkItem(coord, data);
-            gui.setItem(i - start, item);
+            gui.setItem(9 + (i - start), createChunkItem(entry.getKey(), entry.getValue()));
         }
 
-        addNavigationButtons(gui, page, totalPages);
+        addNavigationButtons(gui, page, totalPages, worldName);
 
         PlayerGuiState state = new PlayerGuiState(GuiState.CHUNK_LIST);
         state.world = worldName;
@@ -157,22 +175,40 @@ public class GuiManager implements Listener {
     private ItemStack createChunkItem(RedstoneDetector.ChunkCoordinate coord, RedstoneDetector.ChunkData data) {
         ItemStack item = new ItemStack(Material.MAP);
         ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            String chunkName = plugin.getMessage("gui.chunk_item_name", "Chunk {coord}").replace("{coord}", coord.toDisplayString());
-            meta.setDisplayName(ChatColor.YELLOW + chunkName);
+        if (meta == null) return item;
 
-            List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunk_world", "World: {world}").replace("{world}", coord.world()));
-            lore.add(ChatColor.RED + plugin.getMessage("gui.chunk_redstone", "Redstone: {count}").replace("{count}", String.valueOf(data.redstoneCount.get())));
-            lore.add(ChatColor.GREEN + plugin.getMessage("gui.chunk_entities", "Entities: {count}").replace("{count}", String.valueOf(data.entityCount.get())));
-            lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunk_detected", "Detected: {time}").replace("{time}", formatTime(data.lastScanned)));
-            lore.add("");
-            lore.add(ChatColor.GOLD + plugin.getMessage("gui.chunk_lclick", "Left-click: Open actions"));
-            lore.add(ChatColor.GOLD + plugin.getMessage("gui.chunk_shift_rclick", "Shift + Right-click: Remove redstone"));
+        meta.setDisplayName(ChatColor.YELLOW + plugin.getMessage("gui.chunk_item_name", "Chunk {coord}")
+                .replace("{coord}", coord.toDisplayString()));
 
-            meta.setLore(lore);
-            item.setItemMeta(meta);
+        int bx1 = coord.x() * 16;
+        int bz1 = coord.z() * 16;
+
+        long minutesAgo = (System.currentTimeMillis() - data.lastScanned) / 60000;
+        String timeAgo;
+        if (minutesAgo == 0) {
+            timeAgo = plugin.getMessage("gui.time_just_now", "Just now");
+        } else if (minutesAgo < 60) {
+            timeAgo = minutesAgo + plugin.getMessage("gui.time_minutes_ago", " min. ago");
+        } else {
+            timeAgo = (minutesAgo / 60) + plugin.getMessage("gui.time_hours_ago", " h. ago");
         }
+
+        List<String> lore = Arrays.asList(
+                ChatColor.GRAY + "§l" + plugin.getMessage("gui.chunk_coordinates", "Chunk Coordinates:"),
+                ChatColor.WHITE + "  X: " + bx1 + " — " + (bx1 + 15),
+                ChatColor.WHITE + "  Z: " + bz1 + " — " + (bz1 + 15),
+                ChatColor.AQUA + "  ID: " + coord.x() + ", " + coord.z(),
+                "",
+                ChatColor.GRAY + plugin.getMessage("gui.chunk_world", "World: {world}").replace("{world}", coord.world()),
+                ChatColor.RED + plugin.getMessage("gui.chunk_redstone", "Redstone: {count}").replace("{count}", String.valueOf(data.redstoneCount.get())),
+                ChatColor.GREEN + plugin.getMessage("gui.chunk_entities", "Entities: {count}").replace("{count}", String.valueOf(data.entityCount.get())),
+                ChatColor.GRAY + plugin.getMessage("gui.chunk_detected", "Detected: {time}").replace("{time}", timeAgo),
+                "",
+                ChatColor.YELLOW + plugin.getMessage("gui.chunk_lclick", "Left click → Open actions"),
+                ChatColor.GOLD + plugin.getMessage("gui.chunk_shift_rclick", "Shift + Right click → Remove redstone")
+        );
+        meta.setLore(lore);
+        item.setItemMeta(meta);
         return item;
     }
 
@@ -190,7 +226,7 @@ public class GuiManager implements Listener {
         }
     }
 
-    private void addNavigationButtons(Inventory gui, int page, int totalPages) {
+    private void addNavigationButtons(Inventory gui, int page, int totalPages, String worldName) {
         if (page > 0) {
             ItemStack prev = new ItemStack(Material.ARROW);
             ItemMeta meta = prev.getItemMeta();
@@ -227,21 +263,49 @@ public class GuiManager implements Listener {
         String title = plugin.getMessage("gui.chunk_actions_title", "Chunk Actions");
         Inventory gui = Bukkit.createInventory(null, 27, title);
 
-        gui.setItem(10, createItem(Material.BOOK, ChatColor.YELLOW + plugin.getMessage("gui.chunk_info", "View Chunk Details")));
-        gui.setItem(12, createItem(Material.ENDER_PEARL, ChatColor.GREEN + plugin.getMessage("gui.chunk_teleport", "Teleport to Chunk")));
-        gui.setItem(14, createItem(Material.REDSTONE_BLOCK, ChatColor.RED + plugin.getMessage("gui.chunk_remove_redstone", "Remove Redstone")));
-        gui.setItem(16, createItem(Material.EMERALD, ChatColor.GREEN + plugin.getMessage("gui.chunk_restore_redstone", "Restore Redstone")));
-        gui.setItem(22, createItem(Material.ARROW, ChatColor.GRAY + plugin.getMessage("gui.back_to_chunks", "Back to Chunks")));
+        ItemStack currentChunk = new ItemStack(Material.MAP);
+        ItemMeta meta = currentChunk.getItemMeta();
+        if (meta != null) {
+            int x1 = coord.x() * 16;
+            int z1 = coord.z() * 16;
+            meta.setDisplayName(ChatColor.AQUA + "Current Chunk " + coord.toDisplayString());
+
+            List<String> lore = Arrays.asList(
+                    ChatColor.GRAY + "World: " + ChatColor.WHITE + coord.world(),
+                    ChatColor.GRAY + "Blocks X: " + ChatColor.WHITE + x1 + " — " + (x1 + 15),
+                    ChatColor.GRAY + "Blocks Z: " + ChatColor.WHITE + z1 + " — " + (z1 + 15),
+                    "",
+                    ChatColor.YELLOW + "Actions for this chunk"
+            );
+            meta.setLore(lore);
+            currentChunk.setItemMeta(meta);
+        }
+        gui.setItem(4, currentChunk);
+
+        gui.setItem(10, createActionItem(Material.BOOK, "gui.chunk_info", "View Chunk Details"));
+        gui.setItem(12, createActionItem(Material.ENDER_PEARL, "gui.chunk_teleport", "Teleport to Chunk"));
+        gui.setItem(14, createActionItem(Material.REDSTONE_BLOCK, "gui.chunk_remove_redstone", "Remove Redstone"));
+        gui.setItem(16, createActionItem(Material.EMERALD, "gui.chunk_restore_redstone", "Restore Redstone"));
+
+        gui.setItem(22, createActionItem(Material.ARROW, "gui.back_to_chunks", "Back to Chunk List"));
 
         PlayerGuiState state = new PlayerGuiState(GuiState.CHUNK_ACTIONS);
-        if (playerStates.containsKey(player.getUniqueId())) {
-            PlayerGuiState prevState = playerStates.get(player.getUniqueId());
-            state.world = prevState.world;
-            state.page = prevState.page;
-        }
+        state.world = coord.world();
         state.chunkCoord = coord;
+        state.page = playerStates.getOrDefault(player.getUniqueId(), new PlayerGuiState(GuiState.WORLD_SELECTION)).page;
         playerStates.put(player.getUniqueId(), state);
+
         player.openInventory(gui);
+    }
+
+    private ItemStack createActionItem(Material material, String msgKey, String fallback) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(ChatColor.WHITE + plugin.getMessage(msgKey, fallback));
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     private ItemStack createItem(Material material, String name) {
@@ -257,33 +321,84 @@ public class GuiManager implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player)) return;
-
         Player player = (Player) event.getWhoClicked();
+
         PlayerGuiState state = playerStates.get(player.getUniqueId());
-        if (state == null) return;
-
-        String title = event.getView().getTitle();
-        ItemStack item = event.getCurrentItem();
-
-        if (item == null || !item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) return;
-
-        String displayName = ChatColor.stripColor(item.getItemMeta().getDisplayName());
-
-        if (state.state == GuiState.WORLD_SELECTION) {
-            handleWorldSelectionClick(player, displayName);
-        }
-        else if (state.state == GuiState.CHUNK_LIST) {
-            handleChunkListClick(player, state, displayName, item, event.isShiftClick(), event.isRightClick());
-        }
-        else if (state.state == GuiState.CHUNK_ACTIONS) {
-            handleChunkActionsClick(player, state, displayName);
+        if (state == null) {
+            return;
         }
 
-        event.setCancelled(true);
+        if (event.getClickedInventory() == event.getView().getTopInventory()) {
+            event.setCancelled(true);
+        }
+
+        if (event.getClickedInventory() == event.getView().getBottomInventory() && !event.isShiftClick()) {
+            return;
+        }
+
+        if (event.isShiftClick()) {
+            event.setCancelled(true);
+        }
+
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked == null || clicked.getType() == Material.AIR) {
+            return;
+        }
+
+        if (state.state == GuiState.CHUNK_LIST && event.getSlot() == 4 && clicked.getType() == Material.COMPASS) {
+            player.closeInventory();
+
+            net.md_5.bungee.api.chat.TextComponent main = new net.md_5.bungee.api.chat.TextComponent(
+                    ChatColor.YELLOW + plugin.getMessage("chat.search.enter_coords", "Enter chunk coordinates (X Z): ")
+            );
+
+            net.md_5.bungee.api.chat.TextComponent example = new net.md_5.bungee.api.chat.TextComponent(
+                    ChatColor.GRAY + "5 -3 "
+            );
+            example.setItalic(true);
+
+            net.md_5.bungee.api.chat.TextComponent cancel = new net.md_5.bungee.api.chat.TextComponent(
+                    plugin.getMessage("plugin.cancel", " [Cancel]")
+            );
+            cancel.setColor(net.md_5.bungee.api.ChatColor.RED);
+            cancel.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
+                    net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/rdcancel"
+            ));
+            cancel.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
+                    net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
+                    new net.md_5.bungee.api.chat.hover.content.Text(
+                            plugin.getMessage("chat.search.cancel_hover", "Click to cancel search")
+                    )
+            ));
+
+            main.addExtra(example);
+            main.addExtra(cancel);
+            player.spigot().sendMessage(main);
+
+            ChatListener.waitingForChunkSearch.put(player.getUniqueId(), state.world);
+            return;
+        }
+
+        if (!clicked.hasItemMeta() || !clicked.getItemMeta().hasDisplayName()) {
+            return;
+        }
+
+        String displayName = ChatColor.stripColor(clicked.getItemMeta().getDisplayName());
+
+        switch (state.state) {
+            case WORLD_SELECTION:
+                handleWorldSelectionClick(player, displayName);
+                break;
+            case CHUNK_LIST:
+                handleChunkListClick(player, state, displayName, clicked, event.isShiftClick(), event.isRightClick());
+                break;
+            case CHUNK_ACTIONS:
+                handleChunkActionsClick(player, state, displayName);
+                break;
+        }
     }
 
     private void handleWorldSelectionClick(Player player, String displayName) {
-        // Просто используем displayName как название мира (без цветовых кодов)
         openChunksGUI(player, displayName, 0);
     }
 
@@ -294,15 +409,11 @@ public class GuiManager implements Listener {
 
         if (displayName.equals(backToWorlds)) {
             openWorldSelectionGUI(player);
-        }
-        else if (displayName.equals(previousPage)) {
+        } else if (displayName.equals(previousPage)) {
             openChunksGUI(player, state.world, state.page - 1);
-        }
-        else if (displayName.equals(nextPage)) {
+        } else if (displayName.equals(nextPage)) {
             openChunksGUI(player, state.world, state.page + 1);
-        }
-        else if (item != null && item.getType() == Material.MAP) {
-            // Извлекаем координаты из названия чанка
+        } else if (item != null && item.getType() == Material.MAP) {
             String chunkText = ChatColor.stripColor(plugin.getMessage("gui.chunk_item_name", "Chunk {coord}"));
             String chunkName = displayName.replace(chunkText.replace("{coord}", ""), "").trim();
             chunkName = chunkName.replace("[", "").replace("]", "");
@@ -338,20 +449,16 @@ public class GuiManager implements Listener {
 
         if (displayName.equals(backToChunks)) {
             openChunksGUI(player, state.world, state.page);
-        }
-        else if (displayName.equals(chunkInfo)) {
+        } else if (displayName.equals(chunkInfo)) {
             plugin.openChunkDetails(player, state.chunkCoord);
             player.closeInventory();
-        }
-        else if (displayName.equals(chunkTeleport)) {
+        } else if (displayName.equals(chunkTeleport)) {
             plugin.teleportToChunk(player, state.chunkCoord);
             player.closeInventory();
-        }
-        else if (displayName.equals(removeRedstone)) {
+        } else if (displayName.equals(removeRedstone)) {
             plugin.disableRedstoneInChunk(player, state.chunkCoord);
             player.closeInventory();
-        }
-        else if (displayName.equals(restoreRedstone)) {
+        } else if (displayName.equals(restoreRedstone)) {
             plugin.restoreRedstoneInChunk(player, state.chunkCoord);
             player.closeInventory();
         }
