@@ -33,6 +33,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -42,6 +43,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bstats.bukkit.Metrics;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 import java.io.File;
 import java.io.IOException;
@@ -62,9 +70,17 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             this.z = z;
         }
 
-        public String world() { return world; }
-        public int x() { return x; }
-        public int z() { return z; }
+        public String world() {
+            return world;
+        }
+
+        public int x() {
+            return x;
+        }
+
+        public int z() {
+            return z;
+        }
 
         @Override
         public String toString() {
@@ -124,8 +140,11 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private long lastTPSWarning = 0;
     private final long TPS_WARNING_COOLDOWN = 10000;
     private double lastReportedTPS = 20.0;
-    private static final String CURRENT_VERSION = "1.0.1";
+    private static final String CURRENT_VERSION = "1.0.2";
     private boolean isFirstEnable = true;
+    private final String PLUGIN_NAME = "RedstoneDetector";
+    private boolean updateAvailable = false;
+    private String latestModrinthVersion = null;
 
     private FileConfiguration messagesConfig;
     private File messagesFile;
@@ -142,6 +161,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         loadMessages();
         updateConfigFile();
         updateMessagesFiles();
+        checkForUpdates();
 
         chunkDataFile = new File(getDataFolder(), "chunk-data.yml");
         loadChunkData();
@@ -770,7 +790,124 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             event.getPlayer().sendMessage(ChatColor.RED + getMessage("redstone.place_blocked", "Redstone is frozen! You cannot place blocks."));
         }
     }
+    private boolean isNewerVersion(String current, String latest) {
+        if (current.equals(latest)) return false;
 
+        String[] currentParts = current.split("\\.");
+        String[] latestParts = latest.split("\\.");
+
+        int maxLength = Math.max(currentParts.length, latestParts.length);
+
+        for (int i = 0; i < maxLength; i++) {
+            int currentNum = (i < currentParts.length) ? Integer.parseInt(currentParts[i]) : 0;
+            int latestNum = (i < latestParts.length) ? Integer.parseInt(latestParts[i]) : 0;
+
+            if (currentNum > latestNum) return false;
+            if (currentNum < latestNum) return true;
+        }
+
+        return false;
+    }
+
+    private void checkForUpdates() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try {
+                    URL url = new URL("https://api.modrinth.com/v2/project/redstonedetector/version");
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("GET");
+                    conn.setRequestProperty("User-Agent", "RedstoneDetector Update Checker");
+
+                    int responseCode = conn.getResponseCode();
+                    if (responseCode != 200) {
+                        getLogger().warning(getMessage("update.check_failed", "Failed to check for updates (code: ") + responseCode + ")");
+                        return;
+                    }
+
+                    BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String inputLine;
+                    while ((inputLine = in.readLine()) != null) {
+                        response.append(inputLine);
+                    }
+                    in.close();
+
+                    String json = response.toString();
+                    latestModrinthVersion = extractLatestVersion(json);
+
+                    if (latestModrinthVersion == null) {
+                        getLogger().warning(getMessage("update.parse_failed", "Failed to extract version from Modrinth response"));
+                        return;
+                    }
+
+                    if (isNewerVersion(CURRENT_VERSION, latestModrinthVersion)) {
+                        updateAvailable = true;
+                        String updateMessage = getMessage("update.available", "&aAvailable update &e{plugin}&a! Current: &f{current} &a→ New: &f{new} &a| &b{url}")
+                                .replace("{plugin}", PLUGIN_NAME)
+                                .replace("{current}", CURRENT_VERSION)
+                                .replace("{new}", latestModrinthVersion)
+                                .replace("{url}", "https://modrinth.com/plugin/redstonedetector/versions");
+
+                        for (Player player : Bukkit.getOnlinePlayers()) {
+                            if (player.hasPermission("redstonedetector.admin") || player.isOp()) {
+                                player.sendMessage(updateMessage);
+                            }
+                        }
+
+                        getLogger().info(ChatColor.stripColor(updateMessage));
+                    } else {
+                        getLogger().info(getMessage("update.latest", "RedstoneDetector: you have the latest version ({version})")
+                                .replace("{version}", CURRENT_VERSION));
+                    }
+
+
+                } catch (Exception e) {
+                    getLogger().warning(getMessage("update.error", "Error checking for updates: ") + e.getMessage());
+                }
+            }
+        }.runTaskAsynchronously(this);
+    }
+
+    private String extractLatestVersion(String json) {
+        try {
+            int start = json.indexOf("\"version_number\":\"") + 18;
+            if (start <= 18) return null;
+
+            int end = json.indexOf("\"", start);
+            if (end == -1) return null;
+
+            return json.substring(start, end);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    public void removeEntitiesInChunk(Player player, ChunkCoordinate coord) {
+        World world = getServer().getWorld(coord.world());
+        if (world == null) return;
+
+        Chunk chunk = world.getChunkAt(coord.x(), coord.z());
+        if (!chunk.isLoaded()) return;
+
+        int removed = 0;
+        for (Entity entity : chunk.getEntities()) {
+            if (!(entity instanceof Player)) {
+                entity.remove();
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            player.sendMessage(ChatColor.GREEN + getMessage("chunk.entities_removed", "Entities removed in chunk {coord}")
+                    .replace("{coord}", coord.toDisplayString()));
+            getLogger().info(getMessage("chunk.entities_removed_log", "Removed {count} entities in chunk: {coord}")
+                    .replace("{count}", String.valueOf(removed))
+                    .replace("{coord}", coord.toDisplayString()));
+        } else {
+            player.sendMessage(ChatColor.YELLOW + getMessage("chunk.no_entities", "No entities to remove in chunk {coord}")
+                    .replace("{coord}", coord.toDisplayString()));
+        }
+    }
     public Map<ChunkCoordinate, ChunkData> getChunkMap() {
         return chunkMap;
     }
@@ -893,5 +1030,14 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (updateAvailable && (player.hasPermission("redstonedetector.admin") || player.isOp())) {
+            String updateMessage = getMessage("update.available", "&aAvailable update &e{plugin}&a! Current: &f{current} &a→ New: &f{new} &a| &b{url}")
+                    .replace("{plugin}", PLUGIN_NAME)
+                    .replace("{current}", CURRENT_VERSION)
+                    .replace("{new}", latestModrinthVersion)
+                    .replace("{url}", "https://modrinth.com/plugin/redstonedetector/versions");
+            player.sendMessage(updateMessage);
+        }
     }
 }
