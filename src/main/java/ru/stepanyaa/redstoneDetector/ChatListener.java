@@ -1,3 +1,27 @@
+/**
+ * MIT License
+ *
+ * RedstoneDetector
+ * Copyright (c) 2026 Stepanyaa
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package ru.stepanyaa.redstoneDetector;
 
 import org.bukkit.Bukkit;
@@ -26,13 +50,20 @@ public class ChatListener implements Listener {
         Player player = e.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        if (!waitingForChunkSearch.containsKey(uuid)) return;
+        String waitingFlag = waitingForChunkSearch.get(uuid);
+        if (waitingFlag == null) return;
 
         e.setCancelled(true);
         String input = e.getMessage().trim();
 
+        RedstoneDetector plugin = (RedstoneDetector) Bukkit.getPluginManager().getPlugin("RedstoneDetector");
+        if (plugin == null) {
+            waitingForChunkSearch.remove(uuid);
+            return;
+        }
+
         if (input.equalsIgnoreCase("/rdcancel")) {
-            Bukkit.getScheduler().runTask(plugin, () -> cancelSearch(player));
+            cancelSearch(player);
             return;
         }
 
@@ -48,34 +79,24 @@ public class ChatListener implements Listener {
                 int inputX = Integer.parseInt(parts[0]);
                 int inputZ = Integer.parseInt(parts[1]);
 
-                int chunkX = (Math.abs(inputX) > 300 ? Math.floorDiv(inputX, 16) : inputX);
-                int chunkZ = (Math.abs(inputZ) > 300 ? Math.floorDiv(inputZ, 16) : inputZ);
+                int chunkX = (Math.abs(inputX) >= 300 || Math.abs(inputZ) >= 300) ? Math.floorDiv(inputX, 16) : inputX;
+                int chunkZ = (Math.abs(inputZ) >= 300 || Math.abs(inputX) >= 300) ? Math.floorDiv(inputZ, 16) : inputZ;
 
                 RedstoneDetector.ChunkCoordinate target = new RedstoneDetector.ChunkCoordinate(
-                        waitingForChunkSearch.get(uuid), chunkX, chunkZ
+                        waitingFlag, chunkX, chunkZ
                 );
 
-                if (plugin.getChunkMap().containsKey(target)) {
+                RedstoneDetector.ChunkData data = plugin.getChunkMap().get(target);
+                if (data != null) {
+
                     plugin.getGuiManager().openChunkActionsMenu(player, target);
-
-                    String foundMsg = plugin.getMessage("chat.search.found",
-                                    "Found chunk {coord} (X: {x1}..{x2} | Z: {z1}..{z2})")
-                            .replace("{coord}", target.toDisplayString())
-                            .replace("{x1}", String.valueOf(target.x() * 16))
-                            .replace("{x2}", String.valueOf(target.x() * 16 + 15))
-                            .replace("{z1}", String.valueOf(target.z() * 16))
-                            .replace("{z2}", String.valueOf(target.z() * 16 + 15));
-
-                    player.sendMessage(ChatColor.GREEN + foundMsg);
+                    plugin.openChunkDetails(player, target);
                 } else {
-                    String notFound = plugin.getMessage("chat.search.not_found",
+                    player.sendMessage(ChatColor.YELLOW + plugin.getMessage("chat.search.not_found",
                                     "Chunk {coord} not found in cache.")
-                            .replace("{coord}", target.toDisplayString());
-                    String hint = plugin.getMessage("chat.search.not_found_hint",
-                            "It may not have been scanned yet or was already cleared.");
-
-                    player.sendMessage(ChatColor.YELLOW + notFound);
-                    player.sendMessage(ChatColor.GRAY + hint);
+                            .replace("{coord}", target.toDisplayString()));
+                    player.sendMessage(ChatColor.GRAY + plugin.getMessage("chat.search.not_found_hint",
+                            "It may not have been scanned yet or was already cleared."));
                 }
             } catch (NumberFormatException ex) {
                 player.sendMessage(ChatColor.RED + plugin.getMessage("chat.search.not_numbers",
@@ -102,5 +123,14 @@ public class ChatListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         waitingForChunkSearch.remove(e.getPlayer().getUniqueId());
+
+        RedstoneDetector plugin = (RedstoneDetector) e.getPlayer().getServer()
+                .getPluginManager().getPlugin("RedstoneDetector");
+
+        if (plugin != null) {
+            plugin.playerChunkDetailsLines.remove(e.getPlayer().getUniqueId());
+            plugin.playerChunkDetailsPage.remove(e.getPlayer().getUniqueId());
+            plugin.playerChunkDetailsTitle.remove(e.getPlayer().getUniqueId());
+        }
     }
 }

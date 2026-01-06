@@ -23,6 +23,7 @@ scan-on-low-tps: true
 # Chunk data storage time (hours) / Время хранения данных о чанках (часов)
 chunk-data-retention: 24
 
+scan-loaded-chunks: true
 #  So far, the plugin is very crude.
 #  It was made purely for private servers, but I don't have any, so I decided to make it for everyone.
 #  Therefore, join my discord server. https:/discord.gg/PXDzCQZUch

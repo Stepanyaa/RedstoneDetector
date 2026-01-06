@@ -2,7 +2,7 @@
  * MIT License
  *
  * RedstoneDetector
- * Copyright (c) 2025 Stepanyaa
+ * Copyright (c) 2026 Stepanyaa
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -44,8 +44,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bstats.bukkit.Metrics;
 import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -56,8 +55,18 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 
 public class RedstoneDetector extends JavaPlugin implements Listener, TabCompleter {
+    public final Map<UUID, List<String>> playerChunkDetailsLines = new HashMap<>();
+    public final Map<UUID, Integer> playerChunkDetailsPage = new HashMap<>();
+    public final Map<UUID, String> playerChunkDetailsTitle = new HashMap<>();
+    private long chunkDataRetentionHours = 24;
 
     public static class ChunkCoordinate {
         private final String world;
@@ -140,7 +149,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private long lastTPSWarning = 0;
     private final long TPS_WARNING_COOLDOWN = 10000;
     private double lastReportedTPS = 20.0;
-    private static final String CURRENT_VERSION = "1.0.2";
+    private static final String CURRENT_VERSION = "1.0.3";
     private boolean isFirstEnable = true;
     private final String PLUGIN_NAME = "RedstoneDetector";
     private boolean updateAvailable = false;
@@ -182,6 +191,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         this.isFirstEnable = false;
         int pluginId = 27778;
         Metrics metrics = new Metrics(this, pluginId);
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                cleanupOldChunkData();
+            }
+        }.runTaskTimer(this, 20L * 60 * 120, 20L * 60 * 120);
     }
 
     private void updateConfigFile() {
@@ -337,6 +352,26 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         String command = cmd.getName().toLowerCase();
+        Player player = (Player) sender;
+        if (label.equalsIgnoreCase("rdpage") && args.length == 2) {
+            UUID targetUuid;
+            try {
+                targetUuid = UUID.fromString(args[0]);
+            } catch (IllegalArgumentException e) {
+                return true;
+            }
+
+            if (!targetUuid.equals(player.getUniqueId())) {
+                return true;
+            }
+
+            if (args[1].equalsIgnoreCase("prev")) {
+                prevChunkDetailsPage(player);
+            } else if (args[1].equalsIgnoreCase("next")) {
+                nextChunkDetailsPage(player);
+            }
+            return true;
+        }
         if (command.equals("redstonedetector") || command.equals("rd")) {
             if (args.length == 0) {
                 return openGuiCommand(sender);
@@ -497,6 +532,46 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         maxRedstone = config.getInt("max-redstone", 100);
         maxEntities = config.getInt("max-entities", 100);
         chunksPerTick = config.getInt("chunks-per-tick", 3);
+        chunksPerTick = config.getInt("chunks-per-tick", 3);
+        monitoringEnabled = config.getBoolean("scan-loaded-chunks", true);
+        chunkDataRetentionHours = config.getLong("chunk-data-retention", 24);
+    }
+    private void cleanupOldChunkData() {
+        if (chunkDataRetentionHours <= 0) {
+            getLogger().info(getMessage("data.retention_disabled", "Chunk data retention disabled (chunk-data-retention: 0)"));
+            return;
+        }
+
+        long cutoffTime = System.currentTimeMillis() - (chunkDataRetentionHours * 3600000L);
+        int removedCount = 0;
+
+        Iterator<Map.Entry<ChunkCoordinate, ChunkData>> iterator = chunkMap.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<ChunkCoordinate, ChunkData> entry = iterator.next();
+            ChunkData data = entry.getValue();
+
+            boolean shouldRemove = false;
+
+            if (data.lastScanned < cutoffTime) {
+                shouldRemove = true;
+            }
+
+            if (data.clearedByAdmin && data.clearedTime > 0 && data.clearedTime < cutoffTime) {
+                shouldRemove = true;
+            }
+
+            if (shouldRemove) {
+                iterator.remove();
+                removedCount++;
+            }
+        }
+
+        if (removedCount > 0) {
+            saveChunkData();
+            getLogger().info(getMessage("data.cleanup_log", "Cleaned up {count} old chunk records (retention: {hours} hours)")
+                    .replace("{count}", String.valueOf(removedCount))
+                    .replace("{hours}", String.valueOf(chunkDataRetentionHours)));
+        }
     }
 
     private void loadChunkData() {
@@ -589,88 +664,36 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     private void startOptimizedChunkScanTask() {
         new BukkitRunnable() {
-            private final Queue<Chunk> chunkQueue = new LinkedList<>();
-            private boolean wasLowTPS = false;
-            private long lastTPSCheck = 0;
-            private final long TPS_CHECK_INTERVAL = 1000;
+            private final List<World> worlds = new ArrayList<>();
+            private int worldIndex = 0;
+            private Iterator<Chunk> chunkIterator = null;
 
             @Override
             public void run() {
                 if (!monitoringEnabled) return;
 
-                long currentTime = System.currentTimeMillis();
-                if (currentTime - lastTPSCheck < TPS_CHECK_INTERVAL) {
-                    return;
-                }
+                worlds.clear();
+                worlds.addAll(getServer().getWorlds());
 
-                lastTPSCheck = currentTime;
-                double currentTPS = 20.0;
-                try {
-                    double[] recentTps = Bukkit.getTPS();
-                    if (recentTps != null && recentTps.length > 0) {
-                        currentTPS = recentTps[0];
-                    }
-                } catch (Exception e) {
-                    getLogger().warning(getMessage("tps.error", "Error retrieving TPS: ") + e.getMessage());
-                }
+                for (int i = 0; i < chunksPerTick; i++) {
+                    if (worlds.isEmpty()) break;
 
-                boolean criticalState = currentTPS < criticalTPS;
-
-                if (criticalState) {
-                    if (firstCriticalState) {
-                        firstCriticalState = false;
-                        forceFullRedstoneScan();
-
-                        if (System.currentTimeMillis() - lastTPSWarning > TPS_WARNING_COOLDOWN) {
-                            lastTPSWarning = System.currentTimeMillis();
+                    if (chunkIterator == null || !chunkIterator.hasNext()) {
+                        if (worldIndex >= worlds.size()) {
+                            worldIndex = 0;
                         }
+                        World world = worlds.get(worldIndex);
+                        chunkIterator = Arrays.asList(world.getLoadedChunks()).iterator();
+                        worldIndex++;
                     }
 
-                    wasLowTPS = true;
-
-                    if (Math.abs(currentTPS - lastReportedTPS) > 1.0 &&
-                            System.currentTimeMillis() - lastTPSWarning > TPS_WARNING_COOLDOWN) {
-                        lastTPSWarning = System.currentTimeMillis();
-                        lastReportedTPS = currentTPS;
-                        getLogger().warning(getMessage("tps.critical", "Critical TPS: ") + currentTPS);
-                    }
-
-                    if (!freezeRedstone) {
-                        setFreezeRedstone(true, "System");
-                    }
-                    lastFreezeTime = System.currentTimeMillis();
-
-                    if (chunkQueue.isEmpty()) {
-                        for (World world : getServer().getWorlds()) {
-                            for (Chunk chunk : world.getLoadedChunks()) {
-                                if (chunk.isLoaded()) {
-                                    chunkQueue.add(chunk);
-                                }
-                            }
-                        }
-                    }
-
-                    for (int i = 0; i < chunksPerTick && !chunkQueue.isEmpty(); i++) {
-                        Chunk chunk = chunkQueue.poll();
-                        if (chunk != null && chunk.isLoaded()) {
-                            scanChunk(chunk);
-                        }
-                    }
-                } else if (wasLowTPS) {
-                    wasLowTPS = false;
-                    firstCriticalState = true;
-                    chunkQueue.clear();
-
-                    long elapsed = currentTime - lastFreezeTime;
-                    long freezeDuration = getConfig().getInt("freeze-duration", 60) * 1000L;
-
-                    if (freezeRedstone && elapsed >= freezeDuration) {
-                        setFreezeRedstone(false, "System");
-                        getLogger().info(getMessage("tps.recovered", "Auto-unfreeze: TPS restored to ") + currentTPS);
+                    if (chunkIterator.hasNext()) {
+                        Chunk chunk = chunkIterator.next();
+                        scanChunk(chunk);
                     }
                 }
             }
-        }.runTaskTimer(this, 100, 1);
+        }.runTaskTimer(this, 0L, 1L);
     }
 
     private void forceFullRedstoneScan() {
@@ -929,15 +952,169 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     public void openChunkDetails(Player player, ChunkCoordinate coord) {
-        ChunkData data = chunkMap.get(coord);
-        if (data != null) {
-            player.sendMessage(ChatColor.GOLD + getMessage("chunk.details.header", "Chunk Details {coord}").replace("{coord}", coord.toDisplayString()));
-            player.sendMessage(ChatColor.GRAY + getMessage("chunk.details.world", "World: {world}").replace("{world}", coord.world()));
-            player.sendMessage(ChatColor.RED + getMessage("chunk.details.redstone", "Redstone: {count}").replace("{count}", String.valueOf(data.redstoneCount.get())));
-            player.sendMessage(ChatColor.GREEN + getMessage("chunk.details.entities", "Entities: {count}").replace("{count}", String.valueOf(data.entityCount.get())));
-        } else {
-            player.sendMessage(ChatColor.RED + getMessage("chunk.details.not_found", "Chunk data not found!"));
+        World world = getServer().getWorld(coord.world());
+        if (world == null) {
+            player.sendMessage(ChatColor.RED + getMessage("chunk.world_not_found", "World '{world}' not found!").replace("{world}", coord.world()));
+            return;
         }
+
+        Chunk chunk = world.getChunkAt(coord.x(), coord.z());
+        if (!chunk.isLoaded()) {
+            chunk.load();
+        }
+
+        Map<Material, Integer> redstoneComponents = new HashMap<>();
+        Map<String, Integer> entityTypes = new HashMap<>();
+
+        for (int y = world.getMinHeight(); y < world.getMaxHeight(); y++) {
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
+                    Block block = chunk.getBlock(x, y, z);
+                    if (isRedstoneComponent(block.getType())) {
+                        redstoneComponents.merge(block.getType(), 1, Integer::sum);
+                    }
+                }
+            }
+        }
+
+        for (Entity entity : chunk.getEntities()) {
+            if (entity instanceof Player) continue;
+            String name = entity.getType().name()
+                    .toLowerCase()
+                    .replace("_", " ");
+            String capitalized = Arrays.stream(name.split(" "))
+                    .map(s -> s.substring(0, 1).toUpperCase() + s.substring(1))
+                    .collect(Collectors.joining(" "));
+            entityTypes.merge(capitalized, 1, Integer::sum);
+        }
+
+        List<String> lines = new ArrayList<>();
+        lines.add(ChatColor.GOLD + "═════ " + ChatColor.YELLOW + "Chunk Details " + coord.toDisplayString() + ChatColor.GOLD + " ═════");
+
+
+        int totalRedstone = redstoneComponents.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalRedstone > 0) {
+            lines.add(ChatColor.RED + "Redstone Components: " + ChatColor.WHITE + totalRedstone);
+            redstoneComponents.entrySet().stream()
+                    .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+                    .forEach(entry -> {
+                        String name = entry.getKey().name().toLowerCase().replace("_", " ");
+                        String pretty = Arrays.stream(name.split(" "))
+                                .map(s -> s.substring(0, 1).toUpperCase() + s.substring(1))
+                                .collect(Collectors.joining(" "));
+                        lines.add(ChatColor.GRAY + "  • " + ChatColor.WHITE + entry.getValue() + " × " + pretty);
+                    });
+        } else {
+            lines.add(ChatColor.GREEN + "Redstone Components: " + ChatColor.GRAY + "none");
+        }
+
+        lines.add("");
+
+        int totalEntities = entityTypes.values().stream().mapToInt(Integer::intValue).sum();
+        if (totalEntities > 0) {
+            lines.add(ChatColor.GREEN + "Entities: " + ChatColor.WHITE + totalEntities);
+            entityTypes.entrySet().stream()
+                    .sorted(Map.Entry.comparingByValue(Comparator.reverseOrder()))
+                    .forEach(entry -> {
+                        lines.add(ChatColor.GRAY + "  • " + ChatColor.WHITE + entry.getValue() + " × " + entry.getKey());
+                    });
+        } else {
+            lines.add(ChatColor.GREEN + "Entities: " + ChatColor.GRAY + "none");
+        }
+
+        playerChunkDetailsLines.put(player.getUniqueId(), lines);
+        playerChunkDetailsPage.put(player.getUniqueId(), 0);
+        playerChunkDetailsTitle.put(player.getUniqueId(), "Chunk Details " + coord.toDisplayString());
+
+        ChatListener.waitingForChunkSearch.put(player.getUniqueId(), "PAGINATION");
+
+        showChunkDetailsPage(player, 0);
+    }
+    private void showChunkDetailsPage(Player player, int page) {
+        List<String> lines = playerChunkDetailsLines.get(player.getUniqueId());
+        String title = playerChunkDetailsTitle.get(player.getUniqueId());
+        if (lines == null || title == null) {
+            player.sendMessage(ChatColor.RED + getMessage("chunk.details.error_display", "Error displaying chunk details."));
+            return;
+        }
+
+        int linesPerPage = 15;
+        int totalPages = (int) Math.ceil((double) lines.size() / linesPerPage);
+        if (page < 0) page = 0;
+        if (page >= totalPages) page = totalPages - 1;
+
+        playerChunkDetailsPage.put(player.getUniqueId(), page);
+
+        player.sendMessage("");
+        player.sendMessage(ChatColor.GOLD + "═════ " + ChatColor.AQUA + title +
+                ChatColor.GRAY + " (Page " + (page + 1) + "/" + totalPages + ")" + ChatColor.GOLD + " ═════");
+
+        int start = page * linesPerPage;
+        int end = Math.min(start + linesPerPage, lines.size());
+        for (int i = start; i < end; i++) {
+            player.sendMessage(lines.get(i));
+        }
+
+        if (totalPages > 1) {
+            player.sendMessage("");
+
+            String prevCommand = "/rdpage " + player.getUniqueId() + " prev";
+            String nextCommand = "/rdpage " + player.getUniqueId() + " next";
+
+            net.md_5.bungee.api.chat.TextComponent message = new net.md_5.bungee.api.chat.TextComponent();
+
+            if (page > 0) {
+                net.md_5.bungee.api.chat.TextComponent prev = new net.md_5.bungee.api.chat.TextComponent(
+                        getMessage("chunk.details.button_back", "< Back "));
+                prev.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
+                        net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, prevCommand));
+                prev.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
+                        net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
+                        new net.md_5.bungee.api.chat.TextComponent[]{
+                                new net.md_5.bungee.api.chat.TextComponent(
+                                        getMessage("chunk.details.hover_back", "Click to go back"))
+                        }));
+                message.addExtra(prev);
+            }
+
+            net.md_5.bungee.api.chat.TextComponent separator = new net.md_5.bungee.api.chat.TextComponent(
+                    getMessage("chunk.details.button_separator", " | "));
+            message.addExtra(separator);
+
+            if (page < totalPages - 1) {
+                net.md_5.bungee.api.chat.TextComponent next = new net.md_5.bungee.api.chat.TextComponent(
+                        getMessage("chunk.details.button_next", "Next >"));
+                next.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
+                        net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, nextCommand));
+                next.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
+                        net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
+                        new net.md_5.bungee.api.chat.TextComponent[]{
+                                new net.md_5.bungee.api.chat.TextComponent(
+                                        getMessage("chunk.details.hover_next", "Click to go next"))
+                        }));
+                message.addExtra(next);
+            }
+
+            player.spigot().sendMessage(message);
+
+            player.sendMessage(getMessage("chunk.details.navigation_hint",
+                    "Click on the buttons above to navigate • or /rdcancel to exit"));
+        } else {
+            player.sendMessage(getMessage("chunk.details.end_of_list",
+                    "End of list • /rdcancel to exit"));
+        }
+    }
+
+    public void nextChunkDetailsPage(Player player) {
+        Integer current = playerChunkDetailsPage.get(player.getUniqueId());
+        if (current == null) return;
+        showChunkDetailsPage(player, current + 1);
+    }
+
+    public void prevChunkDetailsPage(Player player) {
+        Integer current = playerChunkDetailsPage.get(player.getUniqueId());
+        if (current == null) return;
+        showChunkDetailsPage(player, current - 1);
     }
 
     public void teleportToChunk(Player player, ChunkCoordinate coord) {
@@ -990,6 +1167,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             ChunkData data = chunkMap.get(coord);
             if (data != null) {
                 data.clearedByAdmin = true;
+                saveChunkData();
                 data.clearedTime = System.currentTimeMillis();
                 Bukkit.getScheduler().runTaskLater(this, new Runnable() {
                     @Override

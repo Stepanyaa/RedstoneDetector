@@ -1,5 +1,5 @@
 name: RedstoneDetector
-version: '1.0.2'
+version: '1.0.3'
 main: ru.stepanyaa.redstoneDetector.RedstoneDetector
 api-version: "1.16"
 authors: [Stepanyaa]
@@ -16,6 +16,9 @@ commands:
   rdcancel:
     description: Cancel chunk search
     usage: /rdcancel
+  rdpage:
+    description: Internal pagination command
+    usage: /rdpage
 permissions:
   redstonedetector.admin:
     default: op
