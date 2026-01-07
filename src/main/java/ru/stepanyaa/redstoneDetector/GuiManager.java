@@ -45,6 +45,7 @@ import java.io.IOException;
 import java.util.*;
 
 public class GuiManager implements Listener, InventoryHolder {
+    private final Set<UUID> transitioningPlayers = new HashSet<>();
     public enum SortMode {
         COORDINATE, REDSTONE, ENTITIES
     }
@@ -78,6 +79,7 @@ public class GuiManager implements Listener, InventoryHolder {
     }
 
     public void openWorldSelectionGUI(Player player) {
+        markTransition(player);
         String title = plugin.getMessage("gui.world_selection_title", "Select a World");
         Inventory gui = Bukkit.createInventory(this, 45, title);
         List<World> worlds = new ArrayList<>(Bukkit.getWorlds());
@@ -113,6 +115,7 @@ public class GuiManager implements Listener, InventoryHolder {
     }
 
     public void openChunksGUI(Player player, String worldName, int page) {
+        markTransition(player);
         PlayerGuiState state = playerStates.get(player.getUniqueId());
         if (state == null) {
             state = new PlayerGuiState(GuiState.CHUNK_LIST);
@@ -341,6 +344,7 @@ public class GuiManager implements Listener, InventoryHolder {
     }
 
     public void openChunkActionsMenu(Player player, RedstoneDetector.ChunkCoordinate coord) {
+        markTransition(player);
         String title = plugin.getMessage("gui.chunk_actions_title", "Chunk Actions");
         Inventory gui = Bukkit.createInventory(this, 27, title);
 
@@ -579,7 +583,27 @@ public class GuiManager implements Listener, InventoryHolder {
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
-        savePlayerStates();
+        if (!(event.getPlayer() instanceof Player)) return;
+        Player player = (Player) event.getPlayer();
+
+        if (!player.hasPermission("redstonedetector.admin")) {
+            playerStates.remove(player.getUniqueId());
+            return;
+        }
+
+        String title = event.getView().getTitle();
+        boolean isOurGui = title.equals(plugin.getMessage("gui.world_selection_title", "World Selection")) ||
+                title.contains(plugin.getMessage("gui.chunk_list_title", "Chunks in ")) ||
+                title.contains(plugin.getMessage("gui.chunk_actions_title", "Chunk: "));
+
+        if (isOurGui) {
+            if (!isTransitioning(player)) {
+            }
+
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                savePlayerStates();
+            });
+        }
     }
 
     public void savePlayerStates() {
@@ -633,7 +657,15 @@ public class GuiManager implements Listener, InventoryHolder {
             plugin.getLogger().severe(errorMsg + e.getMessage());
         }
     }
+    private boolean isTransitioning(Player player) {
+        return transitioningPlayers.contains(player.getUniqueId());
+    }
 
+    private void markTransition(Player player) {
+        UUID uuid = player.getUniqueId();
+        transitioningPlayers.add(uuid);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> transitioningPlayers.remove(uuid), 1L);
+    }
     public void restorePlayerState(Player player) {
         PlayerGuiState state = playerStates.get(player.getUniqueId());
         if (state == null) {

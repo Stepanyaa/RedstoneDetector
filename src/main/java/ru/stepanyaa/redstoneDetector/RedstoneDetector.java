@@ -138,18 +138,21 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private long lastFreezeTime = 0;
     private boolean monitoringEnabled = true;
     private double criticalTPS = 15.0;
+    private boolean scanOnLowTPS = true;
+    private int chunksPerTick = 3;
     private int maxRedstone = 100;
     private int maxEntities = 100;
+    private int freezeDuration;
+    private long freezeStartTime = 0;
     private final Map<ChunkCoordinate, Map<Location, Material>> redstoneBackups = new ConcurrentHashMap<>();
     private final Set<Material> redstoneMaterials = new HashSet<>();
-    private int chunksPerTick = 3;
     private boolean firstCriticalState = true;
     private File chunkDataFile;
     private YamlConfiguration chunkDataConfig;
     private long lastTPSWarning = 0;
     private final long TPS_WARNING_COOLDOWN = 10000;
     private double lastReportedTPS = 20.0;
-    private static final String CURRENT_VERSION = "1.0.3";
+    private static final String CURRENT_VERSION = "1.0.4";
     private boolean isFirstEnable = true;
     private final String PLUGIN_NAME = "RedstoneDetector";
     private boolean updateAvailable = false;
@@ -531,7 +534,8 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         criticalTPS = config.getDouble("critical-tps", 15.0);
         maxRedstone = config.getInt("max-redstone", 100);
         maxEntities = config.getInt("max-entities", 100);
-        chunksPerTick = config.getInt("chunks-per-tick", 3);
+        scanOnLowTPS = config.getBoolean("scan-on-low-tps", true);
+        freezeDuration = config.getInt("freeze-duration", 300);
         chunksPerTick = config.getInt("chunks-per-tick", 3);
         monitoringEnabled = config.getBoolean("scan-loaded-chunks", true);
         chunkDataRetentionHours = config.getLong("chunk-data-retention", 24);
@@ -664,36 +668,78 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     private void startOptimizedChunkScanTask() {
         new BukkitRunnable() {
-            private final List<World> worlds = new ArrayList<>();
             private int worldIndex = 0;
-            private Iterator<Chunk> chunkIterator = null;
+            private int chunkIndex = 0;
+            private long lastTpsCheck = 0;
 
             @Override
             public void run() {
-                if (!monitoringEnabled) return;
+                long now = System.currentTimeMillis();
 
-                worlds.clear();
-                worlds.addAll(getServer().getWorlds());
+                if (now - lastTpsCheck > 2000) {
+                    lastTpsCheck = now;
+                    double currentTps = Bukkit.getTPS()[0];
 
-                for (int i = 0; i < chunksPerTick; i++) {
-                    if (worlds.isEmpty()) break;
+                    if (scanOnLowTPS && currentTps < criticalTPS) {
+                        if (!freezeRedstone) {
+                            freezeRedstone = true;
+                            monitoringEnabled = true;
+                            freezeStartTime = now;
 
-                    if (chunkIterator == null || !chunkIterator.hasNext()) {
-                        if (worldIndex >= worlds.size()) {
-                            worldIndex = 0;
+                            String msg = getMessage("logs.low_tps_frozen", "!!! LOW TPS: {tps}. Redstone frozen!")
+                                    .replace("{tps}", String.format("%.2f", currentTps));
+                            getLogger().warning(ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', msg)));
                         }
-                        World world = worlds.get(worldIndex);
-                        chunkIterator = Arrays.asList(world.getLoadedChunks()).iterator();
-                        worldIndex++;
-                    }
+                    } else if (freezeRedstone) {
 
-                    if (chunkIterator.hasNext()) {
-                        Chunk chunk = chunkIterator.next();
-                        scanChunk(chunk);
+                        if (currentTps > (criticalTPS + 0.5)) {
+
+                            if (freezeDuration == -1) {
+                                return;
+                            }
+
+                            long secondsSinceFreeze = (now - freezeStartTime) / 1000;
+                            if (secondsSinceFreeze >= freezeDuration) {
+                                freezeRedstone = false;
+
+                                String msg = getMessage("logs.tps_stabilized", "TPS stabilized. Redstone unfrozen after {duration}s.")
+                                        .replace("{duration}", String.valueOf(secondsSinceFreeze));
+                                getLogger().info(ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', msg)));
+                            }
+                        }
                     }
                 }
+
+                if (!monitoringEnabled) return;
+
+                List<World> worlds = Bukkit.getWorlds();
+                if (worlds.isEmpty()) return;
+
+                if (worldIndex >= worlds.size()) {
+                    worldIndex = 0;
+                    chunkIndex = 0;
+                }
+
+                World world = worlds.get(worldIndex);
+                Chunk[] loadedChunks = world.getLoadedChunks();
+
+                if (loadedChunks.length == 0) {
+                    worldIndex++;
+                    chunkIndex = 0;
+                    return;
+                }
+
+                for (int i = 0; i < chunksPerTick; i++) {
+                    if (chunkIndex >= loadedChunks.length) {
+                        worldIndex++;
+                        chunkIndex = 0;
+                        break;
+                    }
+                    scanChunk(loadedChunks[chunkIndex]);
+                    chunkIndex++;
+                }
             }
-        }.runTaskTimer(this, 0L, 1L);
+        }.runTaskTimer(this, 1L, 1L);
     }
 
     private void forceFullRedstoneScan() {

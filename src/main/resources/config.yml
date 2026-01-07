@@ -8,11 +8,11 @@ critical-tps: 15.0
 # The maximum allowed amount of redstone in a chunk / Максимально допустимое количество редстоуна в чанке
 max-redstone: 100
 
-#  Maximum allowed number of entities in a chunk / Максимально допустимое количество сущностей в чанке
+# Maximum allowed number of entities in a chunk / Максимально допустимое количество сущностей в чанке
 max-entities: 100
 
-# It's not working yet / Пока не работает
-freeze-duration: 120
+# The time after which the redstone will unfreeze at low TPS. The value (-1) will never unfreeze. / Время, по истечении которого редстоун будет разморожен при низком TPS. Значение (-1) никогда не разморозится.
+freeze-duration: 300
 
 # The number of chunks scanned per tick / Количество чанков, сканируемых за один тик
 chunks-per-tick: 3
