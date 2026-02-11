@@ -3,9 +3,10 @@
 
 A powerful Minecraft plugin designed to automatically detect and prevent redstone-based lag machines on your server. Features an intuitive GUI interface for monitoring and managing suspicious chunks in real-time.
 
-*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.10-success&logo=minecraft)     
-*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.10-success&logo=minecraft)   
-*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.10-success&logo=minecraft)
+*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.11-success&logo=minecraft)     
+*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.11-success&logo=minecraft)
+*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.11-success&logo=minecraft)   
+*    ![CraftBukkit](https://img.shields.io/badge/CraftBukkit-1.16.1%E2%80%931.21.11-success&logo=minecraft)
 * 
   ![Folia](https://img.shields.io/badge/Folia-Not_Supported-red)
 
@@ -62,9 +63,10 @@ This plugin started as a solution for private servers. I've now released it for 
 
 Мощный плагин для Minecraft, предназначенный для автоматического обнаружения и предотвращения лаг-машин на основе редстоуна. Оснащен интуитивно понятным GUI-интерфейсом для мониторинга и управления подозрительными чанками в реальном времени.
 
-*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.10-success&logo=minecraft)     
-*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.10-success&logo=minecraft)   
-*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.10-success&logo=minecraft)
+*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.11-success&logo=minecraft)     
+*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.11-success&logo=minecraft)
+*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.11-success&logo=minecraft)   
+*    ![CraftBukkit](https://img.shields.io/badge/CraftBukkit-1.16.1%E2%80%931.21.11-success&logo=minecraft)
 * 
   ![Folia](https://img.shields.io/badge/Folia-Не_поддерживается-red)
 
