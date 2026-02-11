@@ -1,27 +1,3 @@
-/**
- * MIT License
- *
- * RedstoneDetector
- * Copyright (c) 2026 Stepanyaa
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
 package ru.stepanyaa.redstoneDetector;
 
 import org.bukkit.Bukkit;
@@ -296,27 +272,12 @@ public class GuiManager implements Listener, InventoryHolder {
         return item;
     }
 
-    private String formatTime(long timestamp) {
-        long diff = System.currentTimeMillis() - timestamp;
-        long minutes = diff / (60 * 1000);
-        long hours = diff / (60 * 60 * 1000);
-
-        if (hours > 0) {
-            return hours + plugin.getMessage("gui.time_hours_ago", " hours ago");
-        } else if (minutes > 0) {
-            return minutes + plugin.getMessage("gui.time_minutes_ago", " minutes ago");
-        } else {
-            return plugin.getMessage("gui.time_just_now", "Just now");
-        }
-    }
-
     private void addNavigationButtons(Inventory gui, int page, int totalPages, String worldName) {
         if (page > 0) {
             ItemStack prev = new ItemStack(Material.ARROW);
             ItemMeta meta = prev.getItemMeta();
             if (meta != null) {
-                String prevText = plugin.getMessage("gui.previous_page", "Previous Page");
-                meta.setDisplayName(ChatColor.YELLOW + prevText);
+                meta.setDisplayName(ChatColor.YELLOW + plugin.getMessage("gui.previous_page", "Previous Page"));
                 prev.setItemMeta(meta);
             }
             gui.setItem(45, prev);
@@ -326,8 +287,7 @@ public class GuiManager implements Listener, InventoryHolder {
             ItemStack next = new ItemStack(Material.ARROW);
             ItemMeta meta = next.getItemMeta();
             if (meta != null) {
-                String nextText = plugin.getMessage("gui.next_page", "Next Page");
-                meta.setDisplayName(ChatColor.YELLOW + nextText);
+                meta.setDisplayName(ChatColor.YELLOW + plugin.getMessage("gui.next_page", "Next Page"));
                 next.setItemMeta(meta);
             }
             gui.setItem(53, next);
@@ -336,8 +296,7 @@ public class GuiManager implements Listener, InventoryHolder {
         ItemStack back = new ItemStack(Material.BARRIER);
         ItemMeta meta = back.getItemMeta();
         if (meta != null) {
-            String backText = plugin.getMessage("gui.back_to_worlds", "Back to Worlds");
-            meta.setDisplayName(ChatColor.RED + backText);
+            meta.setDisplayName(ChatColor.RED + plugin.getMessage("gui.back_to_worlds", "Back to Worlds"));
             back.setItemMeta(meta);
         }
         gui.setItem(49, back);
@@ -438,34 +397,7 @@ public class GuiManager implements Listener, InventoryHolder {
 
         if (state.state == GuiState.CHUNK_LIST && event.getSlot() == 4 && clicked.getType() == Material.COMPASS) {
             player.closeInventory();
-
-            net.md_5.bungee.api.chat.TextComponent main = new net.md_5.bungee.api.chat.TextComponent(
-                    ChatColor.YELLOW + plugin.getMessage("chat.search.enter_coords", "Enter chunk coordinates (X Z): ")
-            );
-
-            net.md_5.bungee.api.chat.TextComponent example = new net.md_5.bungee.api.chat.TextComponent(
-                    ChatColor.GRAY + "5 -3 "
-            );
-            example.setItalic(true);
-
-            net.md_5.bungee.api.chat.TextComponent cancel = new net.md_5.bungee.api.chat.TextComponent(
-                    plugin.getMessage("plugin.cancel", " [Cancel]")
-            );
-            cancel.setColor(net.md_5.bungee.api.ChatColor.RED);
-            cancel.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
-                    net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/rdcancel"
-            ));
-            cancel.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
-                    net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
-                    new net.md_5.bungee.api.chat.hover.content.Text(
-                            plugin.getMessage("chat.search.cancel_hover", "Click to cancel search")
-                    )
-            ));
-
-            main.addExtra(example);
-            main.addExtra(cancel);
-            player.spigot().sendMessage(main);
-
+            plugin.sendSearchPrompt(player);
             ChatListener.waitingForChunkSearch.put(player.getUniqueId(), state.world);
             return;
         }
@@ -496,7 +428,6 @@ public class GuiManager implements Listener, InventoryHolder {
     private void handleChunkListClick(Player player, PlayerGuiState state, String displayName, ItemStack item,
                                       boolean isShiftClick, boolean isRightClick, int slot) {
         String strippedDisplayName = ChatColor.stripColor(displayName);
-
         String backToWorlds = ChatColor.stripColor(plugin.getMessage("gui.back_to_worlds", "Back to Worlds"));
         String previousPage = ChatColor.stripColor(plugin.getMessage("gui.previous_page", "Previous Page"));
         String nextPage = ChatColor.stripColor(plugin.getMessage("gui.next_page", "Next Page"));
@@ -539,8 +470,7 @@ public class GuiManager implements Listener, InventoryHolder {
                         openChunkActionsMenu(player, coord);
                     }
                 } catch (NumberFormatException e) {
-                    String errorMsg = plugin.getMessage("gui.error_chunk_processing", "Error processing chunk coordinates!");
-                    player.sendMessage(ChatColor.RED + errorMsg);
+                    player.sendMessage(ChatColor.RED + plugin.getMessage("gui.error_chunk_processing", "Error processing coordinates"));
                 }
             }
         }
@@ -548,7 +478,6 @@ public class GuiManager implements Listener, InventoryHolder {
 
     private void handleChunkActionsClick(Player player, PlayerGuiState state, String displayName) {
         String strippedDisplayName = ChatColor.stripColor(displayName);
-
         String backToChunks = ChatColor.stripColor(plugin.getMessage("gui.back_to_chunks", "Back to Chunks"));
         String chunkInfo = ChatColor.stripColor(plugin.getMessage("gui.chunk_info", "View Chunk Details"));
         String chunkTeleport = ChatColor.stripColor(plugin.getMessage("gui.chunk_teleport", "Teleport to Chunk"));
@@ -576,33 +505,10 @@ public class GuiManager implements Listener, InventoryHolder {
         }
     }
 
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent event) {
-        savePlayerStates();
-    }
-
-    @EventHandler
-    public void onInventoryClose(InventoryCloseEvent event) {
-        if (!(event.getPlayer() instanceof Player)) return;
-        Player player = (Player) event.getPlayer();
-
-        if (!player.hasPermission("redstonedetector.admin")) {
-            playerStates.remove(player.getUniqueId());
-            return;
-        }
-
-        String title = event.getView().getTitle();
-        boolean isOurGui = title.equals(plugin.getMessage("gui.world_selection_title", "World Selection")) ||
-                title.contains(plugin.getMessage("gui.chunk_list_title", "Chunks in ")) ||
-                title.contains(plugin.getMessage("gui.chunk_actions_title", "Chunk: "));
-
-        if (isOurGui) {
-            if (!isTransitioning(player)) {
-            }
-
-            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                savePlayerStates();
-            });
+    @EventHandler public void onPlayerQuit(PlayerQuitEvent event) { savePlayerStates(); }
+    @EventHandler public void onInventoryClose(InventoryCloseEvent event) {
+        if (event.getPlayer() instanceof Player && event.getPlayer().hasPermission("redstonedetector.admin")) {
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, this::savePlayerStates);
         }
     }
 
@@ -616,75 +522,43 @@ public class GuiManager implements Listener, InventoryHolder {
                 config.set(path + ".state", state.state.name());
                 config.set(path + ".world", state.world);
                 config.set(path + ".page", state.page);
-                if (state.chunkCoord != null) {
-                    config.set(path + ".chunkCoord", state.chunkCoord.toString());
-                }
+                if (state.chunkCoord != null) config.set(path + ".chunkCoord", state.chunkCoord.toString());
                 config.set(path + ".sortMode", state.sortMode != null ? state.sortMode.name() : "COORDINATE");
             }
             config.save(file);
-        } catch (IOException e) {
-            String errorMsg = plugin.getMessage("gui.error_saving_states", "Error saving player states: ");
-            plugin.getLogger().severe(errorMsg + e.getMessage());
-        }
+        } catch (IOException e) { plugin.getLogger().severe("Error saving player states: " + e.getMessage()); }
     }
 
     public void loadPlayerStates() {
         try {
             File file = new File(plugin.getDataFolder(), "player_states.yml");
             if (!file.exists()) return;
-
             YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
             if (!config.contains("states")) return;
-
             for (String key : config.getConfigurationSection("states").getKeys(false)) {
                 UUID playerId = UUID.fromString(key);
                 String path = "states." + key;
-                PlayerGuiState state = new PlayerGuiState(
-                        GuiState.valueOf(config.getString(path + ".state"))
-                );
+                PlayerGuiState state = new PlayerGuiState(GuiState.valueOf(config.getString(path + ".state")));
                 state.world = config.getString(path + ".world");
                 state.page = config.getInt(path + ".page");
                 String coordStr = config.getString(path + ".chunkCoord");
-                if (coordStr != null) {
-                    state.chunkCoord = RedstoneDetector.ChunkCoordinate.fromString(coordStr);
-                }
+                if (coordStr != null) state.chunkCoord = RedstoneDetector.ChunkCoordinate.fromString(coordStr);
                 String sortStr = config.getString(path + ".sortMode", "COORDINATE");
                 state.sortMode = SortMode.valueOf(sortStr);
                 playerStates.put(playerId, state);
             }
-        } catch (Exception e) {
-            String errorMsg = plugin.getMessage("gui.error_loading_states", "Error loading player states: ");
-            plugin.getLogger().severe(errorMsg + e.getMessage());
-        }
+        } catch (Exception e) { plugin.getLogger().severe("Error loading player states: " + e.getMessage()); }
     }
-    private boolean isTransitioning(Player player) {
-        return transitioningPlayers.contains(player.getUniqueId());
-    }
-
-    private void markTransition(Player player) {
-        UUID uuid = player.getUniqueId();
-        transitioningPlayers.add(uuid);
-        Bukkit.getScheduler().runTaskLater(plugin, () -> transitioningPlayers.remove(uuid), 1L);
-    }
+    private boolean isTransitioning(Player player) { return transitioningPlayers.contains(player.getUniqueId()); }
+    private void markTransition(Player player) { transitioningPlayers.add(player.getUniqueId()); Bukkit.getScheduler().runTaskLater(plugin, () -> transitioningPlayers.remove(player.getUniqueId()), 1L); }
     public void restorePlayerState(Player player) {
         PlayerGuiState state = playerStates.get(player.getUniqueId());
-        if (state == null) {
-            openWorldSelectionGUI(player);
-            return;
-        }
-
+        if (state == null) { openWorldSelectionGUI(player); return; }
         switch (state.state) {
-            case WORLD_SELECTION:
-                openWorldSelectionGUI(player);
-                break;
-            case CHUNK_LIST:
-                openChunksGUI(player, state.world, state.page);
-                break;
-            case CHUNK_ACTIONS:
-                openChunkActionsMenu(player, state.chunkCoord);
-                break;
-            default:
-                openWorldSelectionGUI(player);
+            case WORLD_SELECTION: openWorldSelectionGUI(player); break;
+            case CHUNK_LIST: openChunksGUI(player, state.world, state.page); break;
+            case CHUNK_ACTIONS: openChunkActionsMenu(player, state.chunkCoord); break;
+            default: openWorldSelectionGUI(player);
         }
     }
 }

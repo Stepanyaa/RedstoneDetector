@@ -47,11 +47,15 @@ import org.bukkit.Bukkit;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,6 +71,8 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     public final Map<UUID, Integer> playerChunkDetailsPage = new HashMap<>();
     public final Map<UUID, String> playerChunkDetailsTitle = new HashMap<>();
     private long chunkDataRetentionHours = 24;
+    private boolean bungeeApiAvailable = false;
+    private final Set<Material> modernRedstoneMaterials = new HashSet<>();
 
     public static class ChunkCoordinate {
         private final String world;
@@ -143,6 +149,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private int maxRedstone = 100;
     private int maxEntities = 100;
     private int freezeDuration;
+    private boolean manualFreezeOverride = false;
     private long freezeStartTime = 0;
     private final Map<ChunkCoordinate, Map<Location, Material>> redstoneBackups = new ConcurrentHashMap<>();
     private final Set<Material> redstoneMaterials = new HashSet<>();
@@ -152,16 +159,19 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private long lastTPSWarning = 0;
     private final long TPS_WARNING_COOLDOWN = 10000;
     private double lastReportedTPS = 20.0;
-    private static final String CURRENT_VERSION = "1.0.4";
+    private static final String CURRENT_VERSION = "1.0.5";
     private boolean isFirstEnable = true;
     private final String PLUGIN_NAME = "RedstoneDetector";
     private boolean updateAvailable = false;
     private String latestModrinthVersion = null;
-
+    private ServerBackend serverBackend;
+    public interface ServerBackend {
+        double getTPS();
+    }
     private FileConfiguration messagesConfig;
     private File messagesFile;
     private String language;
-    private static final String[] SUPPORTED_LANGUAGES = {"en", "ru"};
+    private static final String[] SUPPORTED_LANGUAGES = {"en", "ru", "de", "fr", "pt", "pl", "tr",};
 
     @Override
     public void onEnable() {
@@ -173,6 +183,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         loadMessages();
         updateConfigFile();
         updateMessagesFiles();
+        reloadConfig();
+        this.guiManager = new GuiManager(this);
+        setupServerBackend();
+        checkBungeeApi();
         checkForUpdates();
 
         chunkDataFile = new File(getDataFolder(), "chunk-data.yml");
@@ -180,7 +194,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
         initializeRedstoneMaterials();
 
-        this.guiManager = new GuiManager(this);
         guiManager.loadPlayerStates();
 
         getServer().getPluginManager().registerEvents(new ChatListener(this), this);
@@ -189,6 +202,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         registerCommands();
         startOptimizedChunkScanTask();
         startAutoSaveTask();
+        initModernMaterials();
 
         getLogger().info(getMessage("plugin.enabled", "Plugin successfully enabled!"));
         this.isFirstEnable = false;
@@ -201,7 +215,93 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             }
         }.runTaskTimer(this, 20L * 60 * 120, 20L * 60 * 120);
     }
+    private void setupServerBackend() {
+        boolean isPaper = false;
+        try {
+            Class.forName("com.destroystokyo.paper.PaperConfig");
+            isPaper = true;
+        } catch (ClassNotFoundException e) {
+            try {
+                Class.forName("io.papermc.paper.configuration.GlobalConfiguration");
+                isPaper = true;
+            } catch (ClassNotFoundException ignored) {}
+        }
+        try {
+            boolean hasGetTPS = false;
+            try { Bukkit.class.getMethod("getTPS"); hasGetTPS = true; } catch (Exception ignored) {}
 
+            if (hasGetTPS) {
+                serverBackend = new PaperBackend();
+            } else {
+                serverBackend = new SpigotBackend();
+            }
+        } catch (Throwable t) {
+            getLogger().warning("Could not initialize TPS metrics (CraftBukkit detected). Auto-freeze disabled.");
+            serverBackend = () -> 20.0;
+        }
+        if (!isPaper) {
+            try {
+                Bukkit.class.getMethod("getTPS");
+                isPaper = true;
+            } catch (NoSuchMethodException ignored) {}
+        }
+
+        if (isPaper) {
+            getLogger().info("Detected Paper/Purpur (or compatible). Using native API.");
+            serverBackend = new PaperBackend();
+        } else {
+            getLogger().info("Detected Spigot/Bukkit. Using NMS Reflection.");
+            serverBackend = new SpigotBackend();
+            serverBackend = new InternalTpsCalculator();
+        }
+
+    }
+    public static class PaperBackend implements ServerBackend {
+        @Override
+        public double getTPS() {
+            try {
+                double[] tps = Bukkit.getTPS();
+                return tps != null && tps.length > 0 ? tps[0] : 20.0;
+            } catch (Throwable e) {
+                return 20.0;
+            }
+        }
+    }
+    public static class SpigotBackend implements ServerBackend {
+        private Object serverInstance;
+        private Field recentTpsField;
+
+        public SpigotBackend() {
+            try {
+                Object craftServer = Bukkit.getServer();
+                Method getServerMethod = craftServer.getClass().getMethod("getServer");
+                serverInstance = getServerMethod.invoke(craftServer);
+                recentTpsField = serverInstance.getClass().getField("recentTps");
+            } catch (Exception e) {
+                Bukkit.getLogger().warning("[RedstoneDetector] Failed to initialize NMS reflection for TPS: " + e.getMessage());
+            }
+        }
+
+        @Override
+        public double getTPS() {
+            if (serverInstance == null || recentTpsField == null) return 20.0;
+            try {
+                double[] tps = (double[]) recentTpsField.get(serverInstance);
+                return tps[0];
+            } catch (Exception e) {
+                return 20.0;
+            }
+        }
+    }
+    private void checkBungeeApi() {
+        try {
+            Class.forName("net.md_5.bungee.api.chat.TextComponent");
+            bungeeApiAvailable = true;
+        } catch (ClassNotFoundException e) {
+            bungeeApiAvailable = false;
+            getLogger().info("BungeeCord Chat API not found (CraftBukkit detected). Interactive buttons disabled.");
+        }
+    }
     private void updateConfigFile() {
         File configFile = new File(getDataFolder(), "config.yml");
         if (!configFile.exists()) {
@@ -238,15 +338,23 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     private void updateMessagesFiles() {
+        // Убеждаемся, что папка lang существует
+        File langFolder = new File(getDataFolder(), "lang");
+        if (!langFolder.exists()) {
+            langFolder.mkdirs();
+        }
+
         for (String lang : SUPPORTED_LANGUAGES) {
             String fileName = "messages_" + lang + ".yml";
-            File messageFile = new File(getDataFolder(), fileName);
+            // Файл теперь находится в подпапке
+            File messageFile = new File(langFolder, fileName);
 
             if (!messageFile.exists()) {
                 if (getResource(fileName) != null) {
-                    saveResource(fileName, false);
+                    // Используем наш метод сохранения вместо saveResource
+                    saveFileFromResource(fileName, messageFile);
                     getLogger().info(getMessage("warning.messages-file-create", "Created messages file: %file%")
-                            .replace("%file%", fileName));
+                            .replace("%file%", "lang/" + fileName));
                 } else {
                     getLogger().warning(getMessage("warning.messages-file-not-found", "Messages file %file% not found in plugin!")
                             .replace("%file%", fileName));
@@ -260,7 +368,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             if (currentFileVersion.equals(CURRENT_VERSION)) {
                 if (isFirstEnable) {
                     getLogger().info(getMessage("warning.messages-file-up-to-date", "Messages file %file% is up-to-date (version %version%).")
-                            .replace("%file%", fileName)
+                            .replace("%file%", "lang/" + fileName)
                             .replace("%version%", CURRENT_VERSION));
                 }
                 continue;
@@ -268,9 +376,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
             if (getResource(fileName) != null) {
                 try {
-                    saveResource(fileName, true);
+                    // Используем наш метод сохранения для обновления
+                    saveFileFromResource(fileName, messageFile);
                     getLogger().info(getMessage("warning.messages-file-updated", "Updated messages file %file% to version %version%.")
-                            .replace("%file%", fileName)
+                            .replace("%file%", "lang/" + fileName)
                             .replace("%version%", CURRENT_VERSION));
 
                     YamlConfiguration newConfig = YamlConfiguration.loadConfiguration(messageFile);
@@ -286,6 +395,17 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         }
     }
 
+    private void saveFileFromResource(String resourceName, File outputFile) {
+        try (java.io.InputStream in = getResource(resourceName)) {
+            if (in == null) {
+                getLogger().warning("Resource '" + resourceName + "' not found in JAR!");
+                return;
+            }
+            Files.copy(in, outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            getLogger().severe("Failed to save resource " + resourceName + " to " + outputFile.getName() + ": " + e.getMessage());
+        }
+    }
     private void loadMessages() {
         this.language = getConfig().getString("language", "en");
         if (!Arrays.asList(SUPPORTED_LANGUAGES).contains(this.language)) {
@@ -293,8 +413,15 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             this.language = "en";
         }
 
+        // Создаем папку lang, если её нет
+        File langFolder = new File(getDataFolder(), "lang");
+        if (!langFolder.exists()) {
+            langFolder.mkdirs();
+        }
+
         String messagesFileName = "messages_" + language + ".yml";
-        messagesFile = new File(getDataFolder(), messagesFileName);
+        // Теперь ищем файл ВНУТРИ папки langFolder
+        messagesFile = new File(langFolder, messagesFileName);
 
         messagesConfig = new YamlConfiguration();
 
@@ -302,7 +429,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             if (messagesFile.exists()) {
                 messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
             } else {
-                getLogger().warning("Messages file " + messagesFileName + " does not exist!");
+                getLogger().warning("Messages file " + messagesFileName + " does not exist in 'lang' folder!");
+                // Можно попробовать создать его сразу, если его нет
+                // saveFileFromResource(messagesFileName, messagesFile);
+                // messagesConfig = YamlConfiguration.loadConfiguration(messagesFile);
             }
         } catch (Exception e) {
             getLogger().severe("Failed to load messages file: " + e.getMessage());
@@ -322,6 +452,8 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     private void initializeRedstoneMaterials() {
+        redstoneMaterials.clear();
+
         Material[] materials = {
                 Material.REDSTONE_WIRE, Material.REPEATER, Material.COMPARATOR,
                 Material.PISTON, Material.STICKY_PISTON, Material.OBSERVER,
@@ -331,6 +463,15 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 Material.TARGET
         };
         Collections.addAll(redstoneMaterials, materials);
+        addMaterialIfExists("SCULK_SENSOR");
+        addMaterialIfExists("CALIBRATED_SCULK_SENSOR");
+    }
+    private void addMaterialIfExists(String materialName) {
+        Material mat = Material.getMaterial(materialName);
+        if (mat != null) {
+            redstoneMaterials.add(mat);
+            getLogger().info("Added " + materialName + " to monitored materials.");
+        }
     }
 
     private boolean isRedstoneComponent(Material material) {
@@ -355,8 +496,16 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         String command = cmd.getName().toLowerCase();
-        Player player = (Player) sender;
+
         if (label.equalsIgnoreCase("rdpage") && args.length == 2) {
+            if (!(sender instanceof Player)) {
+                return true;
+            }
+            Player player = (Player) sender;
+            if (!player.hasPermission("redstonedetector.admin")) {
+                return true;
+            }
+
             UUID targetUuid;
             try {
                 targetUuid = UUID.fromString(args[0]);
@@ -368,42 +517,112 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 return true;
             }
 
-            if (args[1].equalsIgnoreCase("prev")) {
+            String dir = args[1].toLowerCase();
+            if (dir.equals("prev") || dir.equals("back") || dir.equals("назад")) {
                 prevChunkDetailsPage(player);
-            } else if (args[1].equalsIgnoreCase("next")) {
+            } else if (dir.equals("next") || dir.equals("далее")) {
                 nextChunkDetailsPage(player);
+            }
+            return true;
+        }
+        if (command.equalsIgnoreCase("rdcancel")) {
+            if (sender instanceof Player) {
+                Player player = (Player) sender;
+                if (player.hasPermission("redstonedetector.admin")) {
+                    ChatListener.cancelSearch(player);
+                }
+            } else {
+                sender.sendMessage(ChatColor.RED + getMessage("command.player_only", "This command is for players only!"));
             }
             return true;
         }
         if (command.equals("redstonedetector") || command.equals("rd")) {
             if (args.length == 0) {
-                return openGuiCommand(sender);
+                if (!(sender instanceof Player)) {
+                    sender.sendMessage(ChatColor.RED + getMessage("command.player_only", "This command is for players only!"));
+                    return true;
+                }
+                Player player = (Player) sender;
+                if (!player.hasPermission("redstonedetector.admin")) {
+                    player.sendMessage(ChatColor.RED + getMessage("command.no_permission_gui", "You do not have permission to use the GUI!"));
+                    return true;
+                }
+                return openGuiCommand(player);
             }
+
             return handleSubCommand(sender, args);
         }
-        if (command.equalsIgnoreCase("rdcancel") && sender instanceof Player) {
-            ChatListener.cancelSearch((Player) sender);
-            return true;
-        }
+
         return false;
     }
 
     private boolean handleSubCommand(CommandSender sender, String[] args) {
-        String subCommand = args[0].toLowerCase();
-        if (subCommand.equals("reload")) {
-            return reloadCommand(sender);
-        } else if (subCommand.equals("gui")) {
-            return openGuiCommand(sender);
-        } else if (subCommand.equals("redstone")) {
-            return redstoneCommand(sender, args);
-        } else if (subCommand.equals("stopredstone")) {
-            return stopRedstoneCommand(sender);
-        } else if (subCommand.equals("scan")) {
-            return scanCommand(sender);
-        } else {
+        if (args.length == 0) {
             sendHelp(sender);
             return true;
         }
+
+        String sub = args[0].toLowerCase();
+
+        if (sub.equals("reload")) {
+            if (!sender.hasPermission("redstonedetector.admin")) {
+                sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_reload", "You do not have permission to reload the plugin!"));
+                return true;
+            }
+            reloadConfig();
+            updateMessagesFiles();
+            loadConfig();
+            loadMessages();
+            sender.sendMessage(ChatColor.GREEN + getMessage("command.reload_success", "Configuration reloaded!"));
+
+            String byWho = "CONSOLE";
+            if (sender instanceof Player) {
+                byWho = ((Player) sender).getName();
+            }
+            getLogger().info("Configuration reloaded by " + byWho);
+
+            return true;
+        }
+
+        if (sub.equals("gui")) {
+            if (!(sender instanceof Player)) {
+                sender.sendMessage(ChatColor.RED + getMessage("command.player_only", "This command is for players only!"));
+                return true;
+            }
+            Player player = (Player) sender;
+            if (!player.hasPermission("redstonedetector.admin")) {
+                player.sendMessage(ChatColor.RED + getMessage("command.no_permission_gui", "You do not have permission to use the GUI!"));
+                return true;
+            }
+            return openGuiCommand(player);
+        }
+
+        if (sub.equals("redstone")) {
+            if (!sender.hasPermission("redstonedetector.admin")) {
+                sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_redstone", "You do not have permission to manage redstone!"));
+                return true;
+            }
+            return redstoneCommand(sender, args);
+        }
+
+        if (sub.equals("stopredstone")) {
+            if (!sender.hasPermission("redstonedetector.admin")) {
+                sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_redstone", "You do not have permission to manage redstone!"));
+                return true;
+            }
+            return stopRedstoneCommand(sender);
+        }
+
+        if (sub.equals("scan")) {
+            if (!sender.hasPermission("redstonedetector.scan")) {
+                sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_scan", "You do not have permission to force a scan!"));
+                return true;
+            }
+            return scanCommand(sender);
+        }
+
+        sendHelp(sender);
+        return true;
     }
 
     private boolean openGuiCommand(CommandSender sender) {
@@ -420,19 +639,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         return true;
     }
 
-    private boolean reloadCommand(CommandSender sender) {
-        if (!sender.hasPermission("redstonedetector.reload")) {
-            sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_reload", "You do not have permission to reload the plugin!"));
-            return true;
-        }
-        reloadConfig();
-        updateMessagesFiles();
-        loadConfig();
-        loadMessages();
-        sender.sendMessage(ChatColor.GREEN + getMessage("command.reload_success", "Configuration reloaded!"));
-        return true;
-    }
-
     private boolean redstoneCommand(CommandSender sender, String[] args) {
         if (!sender.hasPermission("redstonedetector.redstone")) {
             sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_redstone", "You do not have permission to manage redstone!"));
@@ -445,10 +651,12 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         String action = args[1].toLowerCase();
         if (action.equals("freeze")) {
             setFreezeRedstone(true, sender.getName());
+            manualFreezeOverride = true;
             sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_frozen", "Redstone frozen!"));
             return true;
         } else if (action.equals("unfreeze")) {
             setFreezeRedstone(false, sender.getName());
+            manualFreezeOverride = false;
             monitoringEnabled = true;
             sender.sendMessage(ChatColor.GREEN + getMessage("command.redstone_unfrozen", "Redstone unfrozen!"));
             return true;
@@ -470,6 +678,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             return true;
         }
         setFreezeRedstone(true, sender.getName());
+        manualFreezeOverride = true;
         monitoringEnabled = false;
         sender.sendMessage(ChatColor.RED + getMessage("command.redstone_stopped", "Redstone activity forcibly stopped!"));
         return true;
@@ -678,63 +887,37 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
                 if (now - lastTpsCheck > 2000) {
                     lastTpsCheck = now;
-                    double currentTps = Bukkit.getTPS()[0];
+
+                    double currentTps = serverBackend.getTPS();
 
                     if (scanOnLowTPS && currentTps < criticalTPS) {
                         if (!freezeRedstone) {
                             freezeRedstone = true;
-                            monitoringEnabled = true;
+                            manualFreezeOverride = false;
                             freezeStartTime = now;
-
-                            String msg = getMessage("logs.low_tps_frozen", "!!! LOW TPS: {tps}. Redstone frozen!")
-                                    .replace("{tps}", String.format("%.2f", currentTps));
-                            getLogger().warning(ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', msg)));
+                            getLogger().warning("LOW TPS: " + String.format("%.2f", currentTps) + ". Redstone frozen!");
                         }
-                    } else if (freezeRedstone) {
-
-                        if (currentTps > (criticalTPS + 0.5)) {
-
-                            if (freezeDuration == -1) {
-                                return;
-                            }
-
-                            long secondsSinceFreeze = (now - freezeStartTime) / 1000;
-                            if (secondsSinceFreeze >= freezeDuration) {
-                                freezeRedstone = false;
-
-                                String msg = getMessage("logs.tps_stabilized", "TPS stabilized. Redstone unfrozen after {duration}s.")
-                                        .replace("{duration}", String.valueOf(secondsSinceFreeze));
-                                getLogger().info(ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&', msg)));
-                            }
+                    }
+                    else if (freezeRedstone && !manualFreezeOverride && currentTps > (criticalTPS + 0.5)) {
+                        if (freezeDuration != -1 && (now - freezeStartTime) / 1000 >= freezeDuration) {
+                            freezeRedstone = false;
+                            getLogger().info("TPS stabilized. Redstone unfrozen.");
                         }
                     }
                 }
 
                 if (!monitoringEnabled) return;
-
                 List<World> worlds = Bukkit.getWorlds();
                 if (worlds.isEmpty()) return;
 
-                if (worldIndex >= worlds.size()) {
-                    worldIndex = 0;
-                    chunkIndex = 0;
-                }
-
+                if (worldIndex >= worlds.size()) { worldIndex = 0; chunkIndex = 0; }
                 World world = worlds.get(worldIndex);
-                Chunk[] loadedChunks = world.getLoadedChunks();
 
-                if (loadedChunks.length == 0) {
-                    worldIndex++;
-                    chunkIndex = 0;
-                    return;
-                }
+                Chunk[] loadedChunks = world.getLoadedChunks();
+                if (loadedChunks.length == 0) { worldIndex++; chunkIndex = 0; return; }
 
                 for (int i = 0; i < chunksPerTick; i++) {
-                    if (chunkIndex >= loadedChunks.length) {
-                        worldIndex++;
-                        chunkIndex = 0;
-                        break;
-                    }
+                    if (chunkIndex >= loadedChunks.length) { worldIndex++; chunkIndex = 0; break; }
                     scanChunk(loadedChunks[chunkIndex]);
                     chunkIndex++;
                 }
@@ -1076,78 +1259,37 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
         showChunkDetailsPage(player, 0);
     }
-    private void showChunkDetailsPage(Player player, int page) {
+    public void showChunkDetailsPage(Player player, int page) {
         List<String> lines = playerChunkDetailsLines.get(player.getUniqueId());
         String title = playerChunkDetailsTitle.get(player.getUniqueId());
-        if (lines == null || title == null) {
-            player.sendMessage(ChatColor.RED + getMessage("chunk.details.error_display", "Error displaying chunk details."));
-            return;
-        }
+        if (lines == null) return;
 
         int linesPerPage = 15;
         int totalPages = (int) Math.ceil((double) lines.size() / linesPerPage);
-        if (page < 0) page = 0;
-        if (page >= totalPages) page = totalPages - 1;
-
+        if (page < 0) page = 0; if (page >= totalPages) page = totalPages - 1;
         playerChunkDetailsPage.put(player.getUniqueId(), page);
 
         player.sendMessage("");
-        player.sendMessage(ChatColor.GOLD + "═════ " + ChatColor.AQUA + title +
-                ChatColor.GRAY + " (Page " + (page + 1) + "/" + totalPages + ")" + ChatColor.GOLD + " ═════");
+        player.sendMessage(ChatColor.GOLD + "═════ " + ChatColor.AQUA + title + ChatColor.GRAY + " (" + (page + 1) + "/" + totalPages + ")" + ChatColor.GOLD + " ═════");
 
         int start = page * linesPerPage;
         int end = Math.min(start + linesPerPage, lines.size());
-        for (int i = start; i < end; i++) {
-            player.sendMessage(lines.get(i));
-        }
+        for (int i = start; i < end; i++) player.sendMessage(lines.get(i));
 
         if (totalPages > 1) {
             player.sendMessage("");
+            String prevCmd = "/rdpage " + player.getUniqueId() + " prev";
+            String nextCmd = "/rdpage " + player.getUniqueId() + " next";
 
-            String prevCommand = "/rdpage " + player.getUniqueId() + " prev";
-            String nextCommand = "/rdpage " + player.getUniqueId() + " next";
-
-            net.md_5.bungee.api.chat.TextComponent message = new net.md_5.bungee.api.chat.TextComponent();
-
-            if (page > 0) {
-                net.md_5.bungee.api.chat.TextComponent prev = new net.md_5.bungee.api.chat.TextComponent(
-                        getMessage("chunk.details.button_back", "< Back "));
-                prev.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
-                        net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, prevCommand));
-                prev.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
-                        net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
-                        new net.md_5.bungee.api.chat.TextComponent[]{
-                                new net.md_5.bungee.api.chat.TextComponent(
-                                        getMessage("chunk.details.hover_back", "Click to go back"))
-                        }));
-                message.addExtra(prev);
+            if (bungeeApiAvailable) {
+                BungeeHandler.sendPagination(player, page, totalPages, prevCmd, nextCmd, this);
+            } else {
+                String msg = ChatColor.YELLOW + "Страница: " + ChatColor.WHITE + (page + 1) + " / " + totalPages;
+                if (page > 0) msg += ChatColor.GRAY + " [Назад: " + prevCmd + "]";
+                if (page < totalPages - 1) msg += ChatColor.GRAY + " [Далее: " + nextCmd + "]";
+                player.sendMessage(msg);
             }
-
-            net.md_5.bungee.api.chat.TextComponent separator = new net.md_5.bungee.api.chat.TextComponent(
-                    getMessage("chunk.details.button_separator", " | "));
-            message.addExtra(separator);
-
-            if (page < totalPages - 1) {
-                net.md_5.bungee.api.chat.TextComponent next = new net.md_5.bungee.api.chat.TextComponent(
-                        getMessage("chunk.details.button_next", "Next >"));
-                next.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(
-                        net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, nextCommand));
-                next.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(
-                        net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT,
-                        new net.md_5.bungee.api.chat.TextComponent[]{
-                                new net.md_5.bungee.api.chat.TextComponent(
-                                        getMessage("chunk.details.hover_next", "Click to go next"))
-                        }));
-                message.addExtra(next);
-            }
-
-            player.spigot().sendMessage(message);
-
-            player.sendMessage(getMessage("chunk.details.navigation_hint",
-                    "Click on the buttons above to navigate • or /rdcancel to exit"));
-        } else {
-            player.sendMessage(getMessage("chunk.details.end_of_list",
-                    "End of list • /rdcancel to exit"));
+            player.sendMessage(getMessage("chunk.details.navigation_hint", "Use /rdpage or /rdcancel to exit"));
         }
     }
 
@@ -1262,6 +1404,100 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                     .replace("{new}", latestModrinthVersion)
                     .replace("{url}", "https://modrinth.com/plugin/redstonedetector/versions");
             player.sendMessage(updateMessage);
+        }
+    }
+    public void sendSearchPrompt(Player player) {
+        if (bungeeApiAvailable) {
+            BungeeHandler.sendSearchPrompt(player, this);
+        } else {
+            player.sendMessage(ChatColor.YELLOW + getMessage("chat.search.enter_coords", "Enter chunk coordinates (X Z): ") +
+                    ChatColor.GRAY + " (e.g. 5 -3)");
+            player.sendMessage(ChatColor.RED + getMessage("plugin.cancel", "Type /rdcancel to cancel"));
+        }
+    }
+    private static class BungeeHandler {
+        public static void sendPagination(Player player, int page, int total, String prevCmd, String nextCmd, RedstoneDetector plugin) {
+            net.md_5.bungee.api.chat.TextComponent message = new net.md_5.bungee.api.chat.TextComponent();
+
+            if (page > 0) {
+                net.md_5.bungee.api.chat.TextComponent prev = new net.md_5.bungee.api.chat.TextComponent(plugin.getMessage("chunk.details.button_back", "< Назад "));
+                prev.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, prevCmd));
+                message.addExtra(prev);
+            }
+
+            message.addExtra(new net.md_5.bungee.api.chat.TextComponent(ChatColor.GRAY + " | "));
+
+            if (page < total - 1) {
+                net.md_5.bungee.api.chat.TextComponent next = new net.md_5.bungee.api.chat.TextComponent(plugin.getMessage("chunk.details.button_next", " Далее >"));
+                next.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, nextCmd));
+                message.addExtra(next);
+            }
+            player.spigot().sendMessage(message);
+        }
+
+        public static void sendSearchPrompt(Player player, RedstoneDetector plugin) {
+            net.md_5.bungee.api.chat.TextComponent main = new net.md_5.bungee.api.chat.TextComponent(
+                    ChatColor.YELLOW + plugin.getMessage("chat.search.enter_coords", "Enter chunk coordinates (X Z): ")
+            );
+
+            net.md_5.bungee.api.chat.TextComponent example = new net.md_5.bungee.api.chat.TextComponent(ChatColor.GRAY + "5 -3 ");
+            example.setItalic(true);
+
+            net.md_5.bungee.api.chat.TextComponent cancel = new net.md_5.bungee.api.chat.TextComponent(plugin.getMessage("plugin.cancel", " [Cancel]"));
+            cancel.setColor(net.md_5.bungee.api.ChatColor.RED);
+            cancel.setClickEvent(new net.md_5.bungee.api.chat.ClickEvent(net.md_5.bungee.api.chat.ClickEvent.Action.RUN_COMMAND, "/rdcancel"));
+            cancel.setHoverEvent(new net.md_5.bungee.api.chat.HoverEvent(net.md_5.bungee.api.chat.HoverEvent.Action.SHOW_TEXT, new net.md_5.bungee.api.chat.hover.content.Text(plugin.getMessage("chat.search.cancel_hover", "Click to cancel"))));
+
+            main.addExtra(example);
+            main.addExtra(cancel);
+            player.spigot().sendMessage(main);
+        }
+    }
+    public class InternalTpsCalculator extends BukkitRunnable implements ServerBackend {
+        private final LinkedList<Long> history = new LinkedList<>();
+        private long lastTickTime = System.currentTimeMillis();
+        private double currentTps = 20.0;
+
+        public InternalTpsCalculator() {
+            this.runTaskTimer(RedstoneDetector.this, 1L, 1L);
+        }
+
+        @Override
+        public void run() {
+            long now = System.currentTimeMillis();
+            long diff = now - lastTickTime;
+            lastTickTime = now;
+
+            if (diff > 5000) return;
+
+            history.addLast(diff);
+            if (history.size() > 100) history.removeFirst();
+
+            if (history.size() < 40) {
+                currentTps = 20.0;
+                return;
+            }
+
+            double avg = history.stream().mapToLong(Long::longValue).average().orElse(50.0);
+            currentTps = avg <= 51.0 ? 20.0 : 1000.0 / avg;
+        }
+
+        @Override
+        public double getTPS() { return currentTps; }
+    }
+    private void initModernMaterials() {
+        String[] modernNames = {
+                "SCULK_SENSOR",
+                "CALIBRATED_SCULK_SENSOR",
+                "SCULK_SHRIEKER"
+        };
+
+        for (String name : modernNames) {
+            Material mat = Material.getMaterial(name);
+            if (mat != null) {
+                modernRedstoneMaterials.add(mat);
+                getLogger().info("Modern redstone component detected: " + name);
+            }
         }
     }
 }

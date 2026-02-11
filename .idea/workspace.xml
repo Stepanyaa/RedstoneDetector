@@ -4,13 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="v1.0.3">
+    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="Hotfix v1.0.4">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/config.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/config.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_ru.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_ru.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_en.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_en.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/plugin.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/plugin.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -57,6 +57,7 @@
   &quot;keyToString&quot;: {
     &quot;Maven.RedstoneDetector [clean].executor&quot;: &quot;Run&quot;,
     &quot;Maven.RedstoneDetector [package].executor&quot;: &quot;Run&quot;,
+    &quot;Maven.RedstoneDetector [verify].executor&quot;: &quot;Run&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
@@ -70,11 +71,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources" />
+      <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources\lang" />
       <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\java\ru\stepanyaa\redstoneDetector" />
       <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\main" />
       <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\src\main\resources" />
-      <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\main\java\ru\stepanyaa\redstoneDetector" />
-      <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\main\java" />
     </key>
     <key name="CopyClassDialog.RECENTS_KEY">
       <recent name="" />
@@ -132,7 +133,15 @@
       <option name="project" value="LOCAL" />
       <updated>1767703889560</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Hotfix v1.0.4">
+      <option name="closed" value="true" />
+      <created>1767782599264</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1767782599264</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -151,6 +160,7 @@
     <MESSAGE value="v1.0.1" />
     <MESSAGE value="v1.0.2" />
     <MESSAGE value="v1.0.3" />
-    <option name="LAST_COMMIT_MESSAGE" value="v1.0.3" />
+    <MESSAGE value="Hotfix v1.0.4" />
+    <option name="LAST_COMMIT_MESSAGE" value="Hotfix v1.0.4" />
   </component>
 </project>
