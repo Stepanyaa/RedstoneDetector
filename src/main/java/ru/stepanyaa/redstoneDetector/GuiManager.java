@@ -38,7 +38,7 @@ public class GuiManager implements Listener, InventoryHolder {
         public GuiState state;
         public String world;
         public int page;
-        public RedstoneDetector.ChunkCoordinate chunkCoord;
+        public ChunkCoordinate chunkCoord;
         public SortMode sortMode;
 
         public PlayerGuiState(GuiState state) {
@@ -101,13 +101,13 @@ public class GuiManager implements Listener, InventoryHolder {
         }
         SortMode currentSort = state.sortMode != null ? state.sortMode : SortMode.COORDINATE;
 
-        List<Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData>> filteredChunks = new ArrayList<>();
+        List<Map.Entry<ChunkCoordinate, ChunkData>> filteredChunks = new ArrayList<>();
 
         long retentionTime = System.currentTimeMillis() - (plugin.getConfig().getLong("chunk-data-retention", 24) * 60 * 60 * 1000L);
 
-        for (Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> entry : plugin.getChunkMap().entrySet()) {
-            RedstoneDetector.ChunkCoordinate coord = entry.getKey();
-            RedstoneDetector.ChunkData data = entry.getValue();
+        for (Map.Entry<ChunkCoordinate, ChunkData> entry : plugin.getChunkMap().entrySet()) {
+            ChunkCoordinate coord = entry.getKey();
+            ChunkData data = entry.getValue();
 
             if (coord.world().equals(worldName) &&
                     data.lastScanned >= retentionTime &&
@@ -152,7 +152,7 @@ public class GuiManager implements Listener, InventoryHolder {
         int end = Math.min(start + chunksPerPage, filteredChunks.size());
 
         for (int i = start; i < end; i++) {
-            Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData> entry = filteredChunks.get(i);
+            Map.Entry<ChunkCoordinate, ChunkData> entry = filteredChunks.get(i);
             gui.setItem(9 + (i - start), createChunkItem(entry.getKey(), entry.getValue()));
         }
 
@@ -188,12 +188,12 @@ public class GuiManager implements Listener, InventoryHolder {
         player.openInventory(gui);
     }
 
-    private Comparator<Map.Entry<RedstoneDetector.ChunkCoordinate, RedstoneDetector.ChunkData>> getChunkComparator(SortMode mode) {
+    private Comparator<Map.Entry<ChunkCoordinate, ChunkData>> getChunkComparator(SortMode mode) {
         return (a, b) -> {
-            RedstoneDetector.ChunkData dataA = a.getValue();
-            RedstoneDetector.ChunkData dataB = b.getValue();
-            RedstoneDetector.ChunkCoordinate coordA = a.getKey();
-            RedstoneDetector.ChunkCoordinate coordB = b.getKey();
+            ChunkData dataA = a.getValue();
+            ChunkData dataB = b.getValue();
+            ChunkCoordinate coordA = a.getKey();
+            ChunkCoordinate coordB = b.getKey();
 
             int cmp;
             switch (mode) {
@@ -232,7 +232,7 @@ public class GuiManager implements Listener, InventoryHolder {
         }
     }
 
-    private ItemStack createChunkItem(RedstoneDetector.ChunkCoordinate coord, RedstoneDetector.ChunkData data) {
+    private ItemStack createChunkItem(ChunkCoordinate coord, ChunkData data) {
         ItemStack item = new ItemStack(Material.MAP);
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return item;
@@ -302,7 +302,7 @@ public class GuiManager implements Listener, InventoryHolder {
         gui.setItem(49, back);
     }
 
-    public void openChunkActionsMenu(Player player, RedstoneDetector.ChunkCoordinate coord) {
+    public void openChunkActionsMenu(Player player, ChunkCoordinate coord) {
         markTransition(player);
         String title = plugin.getMessage("gui.chunk_actions_title", "Chunk Actions");
         Inventory gui = Bukkit.createInventory(this, 27, title);
@@ -460,7 +460,7 @@ public class GuiManager implements Listener, InventoryHolder {
                 try {
                     int x = Integer.parseInt(parts[0]);
                     int z = Integer.parseInt(parts[1]);
-                    RedstoneDetector.ChunkCoordinate coord = new RedstoneDetector.ChunkCoordinate(state.world, x, z);
+                    ChunkCoordinate coord = new ChunkCoordinate(state.world, x, z);
 
                     if (isShiftClick && isRightClick) {
                         plugin.disableRedstoneInChunk(player, coord);
@@ -542,7 +542,7 @@ public class GuiManager implements Listener, InventoryHolder {
                 state.world = config.getString(path + ".world");
                 state.page = config.getInt(path + ".page");
                 String coordStr = config.getString(path + ".chunkCoord");
-                if (coordStr != null) state.chunkCoord = RedstoneDetector.ChunkCoordinate.fromString(coordStr);
+                if (coordStr != null) state.chunkCoord = ChunkCoordinate.fromString(coordStr);
                 String sortStr = config.getString(path + ".sortMode", "COORDINATE");
                 state.sortMode = SortMode.valueOf(sortStr);
                 playerStates.put(playerId, state);

@@ -4,13 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="Hotfix v1.0.4">
+    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="v1.0.5 Spigot and CraftBukkit support  New languages">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/ChatListener.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/ChatListener.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/config.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/config.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_de.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_de.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/messages_en.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_en.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_fr.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_fr.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_pl.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_pl.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_pt.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_pt.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_ru.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_ru.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_tr.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/messages_tr.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/resources/plugin.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/plugin.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -71,9 +77,9 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\java\ru\stepanyaa\redstoneDetector" />
       <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources" />
       <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources\lang" />
-      <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\java\ru\stepanyaa\redstoneDetector" />
       <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\main" />
       <recent name="C:\Users\Stepan Karpov\Desktop\Redstone detector\src\src\main\resources" />
     </key>
@@ -141,7 +147,15 @@
       <option name="project" value="LOCAL" />
       <updated>1767782599264</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="v1.0.5 Spigot and CraftBukkit support  New languages">
+      <option name="closed" value="true" />
+      <created>1770830206409</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1770830206409</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -161,6 +175,7 @@
     <MESSAGE value="v1.0.2" />
     <MESSAGE value="v1.0.3" />
     <MESSAGE value="Hotfix v1.0.4" />
-    <option name="LAST_COMMIT_MESSAGE" value="Hotfix v1.0.4" />
+    <MESSAGE value="v1.0.5 Spigot and CraftBukkit support  New languages" />
+    <option name="LAST_COMMIT_MESSAGE" value="v1.0.5 Spigot and CraftBukkit support  New languages" />
   </component>
 </project>

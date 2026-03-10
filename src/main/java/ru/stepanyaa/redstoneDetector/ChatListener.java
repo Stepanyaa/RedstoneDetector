@@ -82,11 +82,11 @@ public class ChatListener implements Listener {
                 int chunkX = (Math.abs(inputX) >= 300 || Math.abs(inputZ) >= 300) ? Math.floorDiv(inputX, 16) : inputX;
                 int chunkZ = (Math.abs(inputZ) >= 300 || Math.abs(inputX) >= 300) ? Math.floorDiv(inputZ, 16) : inputZ;
 
-                RedstoneDetector.ChunkCoordinate target = new RedstoneDetector.ChunkCoordinate(
+                ChunkCoordinate target = new ChunkCoordinate(
                         waitingFlag, chunkX, chunkZ
                 );
 
-                RedstoneDetector.ChunkData data = plugin.getChunkMap().get(target);
+                ChunkData data = plugin.getChunkMap().get(target);
                 if (data != null) {
 
                     plugin.getGuiManager().openChunkActionsMenu(player, target);
