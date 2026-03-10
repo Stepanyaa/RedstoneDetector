@@ -107,7 +107,7 @@ This plugin started as a solution for private servers. I've now released it for 
 
 RedstoneDetector создан с учетом интересов сообщества. Мы приветствуем сообщения об ошибках, запросы на добавление новых функций и вклады!
 - **Нашли ошибку?** [Откройте проблему на GitHub](https://github.com/Stepanyaa/RedstoneDetector), чтобы мы могли устранить ее вместе.
-- **Есть идея для нового фильма?** Давайте обсудим это в [Discord](https://discord.gg/PXDzCQZUch)!
+- **Есть идея для функции?** Давайте обсудим это в [Discord](https://discord.gg/PXDzCQZUch)!
 - **Хотите помочь с переводом?** Присоединяйтесь к нашему каналу "#translation" в Discord, чтобы сделать плагин доступным для большего числа игроков.
 
 **Лицензия:** MIT
