@@ -3,28 +3,27 @@
 
 A powerful Minecraft plugin designed to automatically detect and prevent redstone-based lag machines on your server. Features an intuitive GUI interface for monitoring and managing suspicious chunks in real-time.
 
-*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.11-success&logo=minecraft)     
-*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.11-success&logo=minecraft)
-*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.11-success&logo=minecraft)   
-*    ![CraftBukkit](https://img.shields.io/badge/CraftBukkit-1.16.1%E2%80%931.21.11-success&logo=minecraft)
-* 
-  ![Folia](https://img.shields.io/badge/Folia-Not_Supported-red)
+## **Why Choose RedstoneDetector?**
+Tired of spending hours hunting for that one hidden lag machine? RedstoneDetector automates the process, transforming a complex administrative task into a simple, manageable one. It's the **proactive defense** your server needs against lag, allowing you to focus on what matters—your community. The plugin is great for finding lag machines on the server.
+
+#### **Key Features**
+
+* 🔍 **Automatic Detection** – Scans chunks for excessive redstone components and entities.
+* 🛡️ **TPS Protection** – Automatically freezes redstone when TPS drops below a threshold (Default: 15 TPS).
+* 📊 **Visual Interface** – Easy-to-use GUI for real-time monitoring.
+* ⚡ **Quick Actions** – Teleport to chunks, remove or restore redstone with one click.
+* 🌍 **Multi-language Support** – EN, RU, DE, FR, TR, PL, PT.
+
+## 🛠 Technical Info
+
+* **Compatibility:** Paper, Purpur, Spigot, CraftBukkit (1.16.1 – 1.21.x)
+* **Folia:** ❌ Not Supported
 
 ## 📌 Links
 [![Discord](https://img.shields.io/badge/Discord-Join-blue?logo=discord&logoColor=white)](https://discord.gg/PXDzCQZUch)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-red?logo=youtube&logoColor=white)](https://www.youtube.com/@Stepanyaa)
 [![GitHub](https://img.shields.io/badge/GitHub-Repo-yellow?logo=github&logoColor=white)](https://github.com/Stepanyaa/RedstoneDetector)
 [![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?logo=modrinth&logoColor=white)](https://modrinth.com/project/redstonedetector)
-
-## **Why Choose RedstoneDetector?**
-Tired of spending hours hunting for that one hidden lag machine? RedstoneDetector automates the process, transforming a complex administrative task into a simple, manageable one. It's the **proactive defense** your server needs against lag, allowing you to focus on what matters—your community.
-
-#### **Key Features:**
-- 🔍 **Automatic Detection** - Scans chunks for excessive redstone components and entities
-- 🛡️ **TPS Protection** - Automatically freezes redstone when TPS drops critically (Default is 15 TPS)
-- 📊 **Visual Interface** - Easy-to-use GUI for monitoring and management
-- ⚡ **Quick Actions** - Teleport to problematic chunks, remove/restore redstone with one click
-- 🗃️ **Data Retention** - Stores chunk data with configurable retention period
 
 #### **Commands:**
 | Command | Description |
@@ -63,29 +62,28 @@ This plugin started as a solution for private servers. I've now released it for 
 
 Мощный плагин для Minecraft, предназначенный для автоматического обнаружения и предотвращения лаг-машин на основе редстоуна. Оснащен интуитивно понятным GUI-интерфейсом для мониторинга и управления подозрительными чанками в реальном времени.
 
-*    ![Paper](https://img.shields.io/badge/Paper-1.16.1%E2%80%931.21.11-success&logo=minecraft)     
-*    ![Purpur](https://img.shields.io/badge/Purpur-1.16.1%E2%80%931.21.11-success&logo=minecraft)
-*    ![Spigot](https://img.shields.io/badge/Spigot-1.16.1%E2%80%931.21.11-success&logo=minecraft)   
-*    ![CraftBukkit](https://img.shields.io/badge/CraftBukkit-1.16.1%E2%80%931.21.11-success&logo=minecraft)
-* 
-  ![Folia](https://img.shields.io/badge/Folia-Не_поддерживается-red)
+## **Почему стоит выбрать RedstoneDetector?**
+
+Устали тратить часы на поиск одной-единственной скрытой машины с задержками? RedstoneDetector автоматизирует процесс, превращая сложную административную задачу в простую и выполнимую. Это **проактивная защита** вашего сервера от задержек, позволяющая вам сосредоточиться на главном — на вашем сообществе. Плагин отлично подходит для поиска лаг машин на сервере.
+
+#### **Основные возможности**
+
+* 🔍 **Автоматическое обнаружение** — Сканирует чанки на наличие избыточных редстоун-компонентов и сущностей.
+* 🛡️ **Защита TPS** — Автоматическая заморозка редстоуна при падении TPS (по умолчанию ниже 15).
+* 📊 **Визуальный интерфейс** — Удобное GUI-меню для мониторинга в реальном времени.
+* ⚡ **Быстрые действия** — Телепортация к подозрительным чанкам, удаление или восстановление схем в один клик.
+* 🌍 **Поддержка языков** — EN, RU, DE, FR, TR, PL, PT.
+
+## 🛠 Техническая информация
+
+* **Совместимости:** Paper, Purpur, Spigot, CraftBukkit (1.16.1 – 1.21.x)
+* **Folia:** ❌ Не поддерживается
 
 ## 📌 Ссылки
 [![Discord](https://img.shields.io/badge/Discord-Join-blue?logo=discord&logoColor=white)](https://discord.gg/PXDzCQZUch)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-red?logo=youtube&logoColor=white)](https://www.youtube.com/@Stepanyaa)
 [![GitHub](https://img.shields.io/badge/GitHub-Repo-yellow?logo=github&logoColor=white)](https://github.com/Stepanyaa/RedstoneDetector)
 [![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?logo=modrinth&logoColor=white)](https://modrinth.com/project/redstonedetector)
-
-## **Почему стоит выбрать RedstoneDetector?**
-
-Устали тратить часы на поиск одной-единственной скрытой машины с задержками? RedstoneDetector автоматизирует процесс, превращая сложную административную задачу в простую и выполнимую. Это **проактивная защита** вашего сервера от задержек, позволяющая вам сосредоточиться на главном — на вашем сообществе.
-
-#### **Основные возможности:**
-- 🔍 **Автоматическое обнаружение** - Сканирует чанки на наличие чрезмерного количества редстоун-компонентов и сущностей
-- 🛡️ **Защита по TPS** - Автоматически замораживает редстоун при критическом падении TPS (По умолчанию 15 TPS)
-- 📊 **Визуальный интерфейс** - Удобный GUI для мониторинга и управления
-- ⚡ **Быстрые действия** - Телепортация к проблемным чанкам, удаление/восстановление редстоуна в один клик
-- 🗃️ **Сохранение данных** - Хранит данные о чанках с настраиваемым сроком хранения
 
 #### **Команды:**
 
