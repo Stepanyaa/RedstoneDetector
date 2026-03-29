@@ -30,7 +30,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -40,6 +42,7 @@ public class ChatListener implements Listener {
     public static final Map<UUID, String> waitingForChunkSearch = new HashMap<>();
 
     private final RedstoneDetector plugin;
+    private final Map<UUID, BukkitTask> cleanupTasks = new HashMap<>();
 
     public ChatListener(RedstoneDetector plugin) {
         this.plugin = plugin;
@@ -119,18 +122,42 @@ public class ChatListener implements Listener {
             player.sendMessage(ChatColor.RED + "Chunk search cancelled.");
         }
     }
+    @EventHandler
+    public void onJoin(PlayerJoinEvent e) {
+        Player player = e.getPlayer();
+        if (!player.hasPermission("redstonedetector.admin") && !player.isOp()) {
+            return;
+        }
+        UUID uuid = player.getUniqueId();
+        BukkitTask pendingCleanup = cleanupTasks.remove(uuid);
 
+        if (pendingCleanup != null) {
+            pendingCleanup.cancel();
+        }
+    }
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
-        waitingForChunkSearch.remove(e.getPlayer().getUniqueId());
+        Player player = e.getPlayer();
+        UUID uuid = player.getUniqueId();
 
-        RedstoneDetector plugin = (RedstoneDetector) e.getPlayer().getServer()
-                .getPluginManager().getPlugin("RedstoneDetector");
-
-        if (plugin != null) {
-            plugin.playerChunkDetailsLines.remove(e.getPlayer().getUniqueId());
-            plugin.playerChunkDetailsPage.remove(e.getPlayer().getUniqueId());
-            plugin.playerChunkDetailsTitle.remove(e.getPlayer().getUniqueId());
+        if (!player.hasPermission("redstonedetector.admin") && !player.isOp()) {
+            return;
         }
+
+        RedstoneDetector plugin = (RedstoneDetector) Bukkit.getPluginManager().getPlugin("RedstoneDetector");
+        if (plugin == null) return;
+
+        BukkitTask cleanupTask = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            waitingForChunkSearch.remove(uuid);
+            plugin.playerChunkDetailsLines.remove(uuid);
+            plugin.playerChunkDetailsPage.remove(uuid);
+            plugin.playerChunkDetailsTitle.remove(uuid);
+
+            cleanupTasks.remove(uuid);
+
+            plugin.getLogger().info("Данные игрока " + player.getName() + " очищены после выхода.");
+        }, 20L * 60 * 5);
+
+        cleanupTasks.put(uuid, cleanupTask);
     }
 }

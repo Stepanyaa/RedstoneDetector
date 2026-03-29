@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -75,8 +76,14 @@ public class GuiManager implements Listener, InventoryHolder {
             gui.setItem(centerSlots[i], item);
         }
 
-        PlayerGuiState state = new PlayerGuiState(GuiState.WORLD_SELECTION);
-        playerStates.put(player.getUniqueId(), state);
+        PlayerGuiState state = playerStates.get(player.getUniqueId());
+        if (state == null) {
+            state = new PlayerGuiState(GuiState.WORLD_SELECTION);
+            playerStates.put(player.getUniqueId(), state);
+        } else {
+            state.state = GuiState.WORLD_SELECTION;
+        }
+
         player.openInventory(gui);
     }
 
@@ -513,52 +520,76 @@ public class GuiManager implements Listener, InventoryHolder {
     }
 
     public void savePlayerStates() {
-        try {
-            File file = new File(plugin.getDataFolder(), "player_states.yml");
-            YamlConfiguration config = new YamlConfiguration();
-            for (Map.Entry<UUID, PlayerGuiState> entry : playerStates.entrySet()) {
-                String path = "states." + entry.getKey();
-                PlayerGuiState state = entry.getValue();
-                config.set(path + ".state", state.state.name());
-                config.set(path + ".world", state.world);
-                config.set(path + ".page", state.page);
-                if (state.chunkCoord != null) config.set(path + ".chunkCoord", state.chunkCoord.toString());
-                config.set(path + ".sortMode", state.sortMode != null ? state.sortMode.name() : "COORDINATE");
+        File file = new File(plugin.getDataFolder(), "player_states.yml");
+        YamlConfiguration config = new YamlConfiguration();
+
+        for (Map.Entry<UUID, PlayerGuiState> entry : playerStates.entrySet()) {
+            String path = "states." + entry.getKey().toString() + ".";
+            PlayerGuiState state = entry.getValue();
+
+            config.set(path + "state", state.state.name());
+            config.set(path + "world", state.world);
+            config.set(path + "page", state.page);
+            config.set(path + "sortMode", state.sortMode.name());
+            if (state.chunkCoord != null) {
+                config.set(path + "chunkCoord", state.chunkCoord.toString());
+            } else {
+                config.set(path + "chunkCoord", null);
             }
+        }
+
+        try {
             config.save(file);
-        } catch (IOException e) { plugin.getLogger().severe("Error saving player states: " + e.getMessage()); }
+        } catch (IOException e) {
+            plugin.getLogger().severe("Не удалось сохранить состояния игроков: " + e.getMessage());
+        }
     }
 
     public void loadPlayerStates() {
         try {
             File file = new File(plugin.getDataFolder(), "player_states.yml");
             if (!file.exists()) return;
+
             YamlConfiguration config = YamlConfiguration.loadConfiguration(file);
-            if (!config.contains("states")) return;
-            for (String key : config.getConfigurationSection("states").getKeys(false)) {
-                UUID playerId = UUID.fromString(key);
-                String path = "states." + key;
-                PlayerGuiState state = new PlayerGuiState(GuiState.valueOf(config.getString(path + ".state")));
-                state.world = config.getString(path + ".world");
-                state.page = config.getInt(path + ".page");
-                String coordStr = config.getString(path + ".chunkCoord");
-                if (coordStr != null) state.chunkCoord = ChunkCoordinate.fromString(coordStr);
-                String sortStr = config.getString(path + ".sortMode", "COORDINATE");
-                state.sortMode = SortMode.valueOf(sortStr);
-                playerStates.put(playerId, state);
+            ConfigurationSection statesSection = config.getConfigurationSection("states");
+            if (statesSection == null) return;
+
+            for (String key : statesSection.getKeys(false)) {
+                try {
+                    UUID playerId = UUID.fromString(key);
+                    String path = key + ".";
+
+                    String stateName = statesSection.getString(path + "state");
+                    if (stateName == null) continue;
+
+                    PlayerGuiState state = new PlayerGuiState(GuiState.valueOf(stateName));
+                    state.world = statesSection.getString(path + "world");
+                    state.page = statesSection.getInt(path + "page", 0);
+
+                    String coordStr = statesSection.getString(path + "chunkCoord");
+                    if (coordStr != null && !coordStr.isEmpty()) {
+                        try {
+                            state.chunkCoord = ChunkCoordinate.fromString(coordStr);
+                        } catch (Exception e) {
+                            plugin.getLogger().warning("Не удалось загрузить координаты чанка для " + key);
+                        }
+                    }
+
+                    String sortStr = statesSection.getString(path + "sortMode", "COORDINATE");
+                    try {
+                        state.sortMode = SortMode.valueOf(sortStr);
+                    } catch (IllegalArgumentException e) {
+                        state.sortMode = SortMode.COORDINATE;
+                    }
+
+                    playerStates.put(playerId, state);
+                } catch (Exception e) {
+                    plugin.getLogger().severe("Ошибка при загрузке состояния игрока " + key + ": " + e.getMessage());
+                }
             }
-        } catch (Exception e) { plugin.getLogger().severe("Error loading player states: " + e.getMessage()); }
-    }
-    private boolean isTransitioning(Player player) { return transitioningPlayers.contains(player.getUniqueId()); }
-    private void markTransition(Player player) { transitioningPlayers.add(player.getUniqueId()); Bukkit.getScheduler().runTaskLater(plugin, () -> transitioningPlayers.remove(player.getUniqueId()), 1L); }
-    public void restorePlayerState(Player player) {
-        PlayerGuiState state = playerStates.get(player.getUniqueId());
-        if (state == null) { openWorldSelectionGUI(player); return; }
-        switch (state.state) {
-            case WORLD_SELECTION: openWorldSelectionGUI(player); break;
-            case CHUNK_LIST: openChunksGUI(player, state.world, state.page); break;
-            case CHUNK_ACTIONS: openChunkActionsMenu(player, state.chunkCoord); break;
-            default: openWorldSelectionGUI(player);
+        } catch (Exception e) {
+            plugin.getLogger().severe("Критическая ошибка loadPlayerStates: " + e.getMessage());
         }
     }
+    private void markTransition(Player player) { transitioningPlayers.add(player.getUniqueId()); Bukkit.getScheduler().runTaskLater(plugin, () -> transitioningPlayers.remove(player.getUniqueId()), 1L); }
 }

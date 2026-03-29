@@ -51,6 +51,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class RedstoneDetector extends JavaPlugin implements Listener, TabCompleter {
+    private static class SnapshotContainer {
+        String worldName;
+        int x, z, minY, maxY;
+        ChunkSnapshot snapshot;
+        List<EntityType> entities;
+
+        SnapshotContainer(String w, int x, int z, ChunkSnapshot s, int min, int max, List<EntityType> entities) {
+            this.worldName = w; this.x = x; this.z = z; this.snapshot = s;
+            this.minY = min; this.maxY = max; this.entities = entities;
+        }
+    }
 
     private ConfigManager configManager;
     private MessageManager messageManager;
@@ -68,13 +79,8 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private boolean freezeRedstone = false;
     private boolean manualFreezeOverride = false;
     private long freezeStartTime = 0;
-    private long lastFreezeTime = 0;
 
     private boolean monitoringEnabled = true;
-    private boolean firstCriticalState = true;
-    private long lastTPSWarning = 0;
-    private final long TPS_WARNING_COOLDOWN = 10000;
-    private double lastReportedTPS = 20.0;
 
     public final Map<UUID, List<String>> playerChunkDetailsLines = new HashMap<>();
     public final Map<UUID, Integer> playerChunkDetailsPage = new HashMap<>();
@@ -165,7 +171,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         Material mat = Material.getMaterial(materialName);
         if (mat != null) {
             redstoneMaterials.add(mat);
-            getLogger().info("Added " + materialName + " to monitored materials.");
         }
     }
 
@@ -367,36 +372,18 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         freezeRedstone = true;
         manualFreezeOverride = true;
 
-        for (World world : Bukkit.getWorlds()) {
-            for (Chunk chunk : world.getLoadedChunks()) {
-                for (int y = world.getMinHeight(); y < world.getMaxHeight(); y++) {
-                    for (int x = 0; x < 16; x++) {
-                        for (int z = 0; z < 16; z++) {
-                            Block block = chunk.getBlock(x, y, z);
-                            if (isRedstoneComponent(block.getType())) {
-                                block.setType(Material.AIR);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        sender.sendMessage(ChatColor.RED + getMessage("command.redstone_stopped",
-                "Redstone activity forcibly stopped!"));
+        sender.sendMessage(ChatColor.GOLD + getMessage("command.redstone_frozen",
+                "Redstone signals have been frozen (Blocks are safe)!"));
         return true;
     }
 
     private boolean handleScan(CommandSender sender) {
-        if (!sender.hasPermission("redstonedetector.admin")) {
-            sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_scan",
-                    "You do not have permission to force a scan!"));
-            return true;
+        if (isHybridServer()) {
+            runHybridScan();
+        } else {
+            Bukkit.getScheduler().runTaskAsynchronously(this, this::scanAllChunks);
         }
-
-        Bukkit.getScheduler().runTaskAsynchronously(this, this::scanAllChunks);
-        sender.sendMessage(ChatColor.GREEN + getMessage("command.scan_started",
-                "Forced chunk scan started!"));
+        sender.sendMessage(ChatColor.GREEN + getMessage( "command.scan_started","Scanning started..."));
         return true;
     }
 
@@ -443,6 +430,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 List<String> completions = new ArrayList<>();
                 if (sender.hasPermission("redstonedetector.admin")) completions.add("gui");
                 if (sender.hasPermission("redstonedetector.reload")) completions.add("reload");
+                if (sender.hasPermission("redstonedetector.admin")) completions.add("help");
                 if (sender.hasPermission("redstonedetector.redstone")) {
                     completions.add("redstone");
                     completions.add("stopredstone");
@@ -648,6 +636,66 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         Bukkit.getScheduler().runTask(this, this::saveChunkData);
     }
 
+    private void runHybridScan() {
+        List<SnapshotContainer> snapshots = new ArrayList<>();
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                List<EntityType> entityTypes = new ArrayList<>();
+                for (Entity entity : chunk.getEntities()) {
+                    entityTypes.add(entity.getType());
+                }
+
+                snapshots.add(new SnapshotContainer(
+                        world.getName(),
+                        chunk.getX(),
+                        chunk.getZ(),
+                        chunk.getChunkSnapshot(),
+                        world.getMinHeight(),
+                        world.getMaxHeight(),
+                        entityTypes
+                ));
+            }
+        }
+
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            for (SnapshotContainer container : snapshots) {
+                processSnapshot(container);
+            }
+            saveChunkData();
+        });
+    }
+
+    private void processSnapshot(SnapshotContainer data) {
+        ChunkCoordinate coord = new ChunkCoordinate(data.worldName, data.x, data.z);
+        ChunkData chunkData = new ChunkData();
+        int redstoneCount = 0;
+
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                for (int y = data.minY; y < data.maxY; y++) {
+                    Material type = data.snapshot.getBlockType(x, y, z);
+                    if (redstoneMaterials.contains(type)) {
+                        redstoneCount++;
+                        chunkData.redstoneTypes.computeIfAbsent(type, k ->
+                                new java.util.concurrent.atomic.AtomicInteger(0)).incrementAndGet();
+                    }
+                }
+            }
+        }
+        if (data.entities != null && !data.entities.isEmpty()) {
+            chunkData.entityCount.set(data.entities.size());
+            for (EntityType type : data.entities) {
+                chunkData.entityTypes.computeIfAbsent(type, k ->
+                        new java.util.concurrent.atomic.AtomicInteger(0)).incrementAndGet();
+            }
+        }
+        if (redstoneCount > 0 || !data.entities.isEmpty()) {
+            chunkData.redstoneCount.set(redstoneCount);
+            chunkMap.put(coord, chunkData);
+        }
+    }
+
+
     private void loadChunkData() {
         try {
             if (!chunkDataFile.exists() && !chunkDataFile.createNewFile()) {
@@ -792,7 +840,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 .replace("{coord}", coord.toDisplayString()));
         lines.add("");
 
-        // ──────────────── Redstone ────────────────
         lines.add(ChatColor.GOLD + "Redstone Components (" + data.redstoneCount.get() + "):");
         if (data.redstoneCount.get() == 0) {
             lines.add(ChatColor.GRAY + "  none");
@@ -809,7 +856,6 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         }
         lines.add("");
 
-        // ──────────────── Entities ────────────────
         lines.add(ChatColor.GREEN + "Entities (" + data.entityCount.get() + "):");
         if (data.entityCount.get() == 0) {
             lines.add(ChatColor.GRAY + "  none");
@@ -1081,6 +1127,23 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             main.addExtra(cancel);
             player.spigot().sendMessage(main);
         }
+    }
+    private boolean isHybridServer() {
+        String name = Bukkit.getName().toLowerCase();
+        String version = Bukkit.getVersion().toLowerCase();
+        if (name.contains("mohist") || name.contains("arclight") ||
+                name.contains("magma") || name.contains("catserver") ||
+                name.contains("ketting") || name.contains("cardboard")) {
+            return true;
+        }
+        if (version.contains("mohist") || version.contains("arclight")) {
+            return true;
+        }
+        try {
+            Class.forName("com.mohistmc.MohistConfig");
+            return true;
+        } catch (ClassNotFoundException ignored) {}
+        return false;
     }
 
     public Map<ChunkCoordinate, ChunkData> getChunkMap() {
