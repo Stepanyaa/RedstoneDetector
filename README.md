@@ -30,7 +30,7 @@ Tired of spending hours hunting for that one hidden lag machine dropping your TP
 
 * **Core API:** Bukkit / Spigot / Paper / Purpur
 * **Hybrid Server Support:** ✅ Fully compatible with **Mohist**, **Arclight**!
-* **Versions:** 1.16.1 – 1.21.x
+* **Versions:** 1.16.1 – 26.1.x
 * **Folia:** ❌ Not Supported
 
 ---
@@ -86,7 +86,7 @@ RedstoneDetector is built with the community in mind. We welcome bug reports, fe
 
 * **Ядра:** Bukkit / Spigot / Paper / Purpur
 * **Гибридные сервера:** ✅ Полная совместимость с **Mohist**, **Arclight**!
-* **Версии:** 1.16.1 – 1.21.x
+* **Версии:** 1.16.1 – 26.1.x
 * **Folia:** ❌ Не поддерживается
 
 ---
