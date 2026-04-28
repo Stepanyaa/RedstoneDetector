@@ -1,5 +1,5 @@
 name: RedstoneDetector
-version: '1.0.7'
+version: '1.0.7-fix'
 main: ru.stepanyaa.redstoneDetector.RedstoneDetector
 api-version: "1.16"
 authors: [Stepanyaa]

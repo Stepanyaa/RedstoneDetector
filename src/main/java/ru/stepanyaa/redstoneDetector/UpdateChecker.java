@@ -37,7 +37,7 @@ import com.google.gson.JsonParser;
 import java.net.URL;
 
 public class UpdateChecker {
-    private static final String CURRENT_VERSION = "1.0.7";
+    private static final String CURRENT_VERSION = "1.0.7-fix";
     private static final String PLUGIN_NAME = "RedstoneDetector";
     private static final String MODRINTH_API_URL = "https://api.modrinth.com/v2/project/redstonedetector/version";
     
