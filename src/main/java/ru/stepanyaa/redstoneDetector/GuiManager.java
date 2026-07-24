@@ -56,7 +56,7 @@ public class GuiManager implements Listener, InventoryHolder {
     }
 
     public enum GuiState {
-        WORLD_SELECTION, CHUNK_LIST, CHUNK_ACTIONS
+        WORLD_SELECTION, CHUNK_LIST, CHUNK_ACTIONS, DASHBOARD, CHUNK_INFO
     }
 
     public static class PlayerGuiState {
@@ -77,6 +77,277 @@ public class GuiManager implements Listener, InventoryHolder {
 
     public GuiManager(RedstoneDetector plugin) {
         this.plugin = plugin;
+        startDashboardRefreshTask();
+    }
+
+    private void startDashboardRefreshTask() {
+        new org.bukkit.scheduler.BukkitRunnable() {
+            @Override
+            public void run() {
+                for (Player online : Bukkit.getOnlinePlayers()) {
+                    PlayerGuiState st = playerStates.get(online.getUniqueId());
+                    if (st == null || st.state != GuiState.DASHBOARD) continue;
+                    Inventory top = online.getOpenInventory().getTopInventory();
+                    if (top == null || !(top.getHolder() instanceof GuiManager)) continue;
+                    if (top.getSize() < 27) continue;
+                    refreshDashboardItems(top);
+                    online.updateInventory();
+                }
+            }
+        }.runTaskTimer(plugin, 20L, 20L);
+    }
+
+    public void openDashboard(Player player) {
+        markTransition(player);
+        org.bukkit.configuration.file.FileConfiguration guiCfg = plugin.getFileManager().getGui();
+        boolean useColors = guiCfg == null || guiCfg.getBoolean("use-color-indicators", true);
+        String rawTitle = guiCfg != null
+                ? guiCfg.getString("dashboard-title", "&cRedstoneDetector &8\u00bb &7Dashboard")
+                : "RedstoneDetector Dashboard";
+        Inventory gui = Bukkit.createInventory(this, 27, ChatColor.translateAlternateColorCodes('&', rawTitle));
+
+        gui.setItem(4, buildStatusItem());
+
+        gui.setItem(10, dashButton(Material.MAP, "gui.dashboard.chunks", "&aProblem Chunks",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.dashboard.chunks_lore", "Open the list of suspicious chunks."))));
+
+        gui.setItem(12, buildScanItem());
+
+        gui.setItem(14, buildFreezeItem());
+
+        gui.setItem(16, dashButton(Material.NETHER_STAR, "gui.dashboard.reload", "&dReload Plugin",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.dashboard.reload_lore", "Reload all configuration files."))));
+
+        gui.setItem(22, dashButton(Material.BARRIER, "gui.dashboard.close", "&cClose",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.dashboard.close_lore", "Close this menu."))));
+
+        PlayerGuiState state = playerStates.get(player.getUniqueId());
+        if (state == null) state = new PlayerGuiState(GuiState.DASHBOARD);
+        state.state = GuiState.DASHBOARD;
+        playerStates.put(player.getUniqueId(), state);
+        player.openInventory(gui);
+    }
+
+    private ItemStack buildStatusItem() {
+        org.bukkit.configuration.file.FileConfiguration guiCfg = plugin.getFileManager().getGui();
+        boolean useColors = guiCfg == null || guiCfg.getBoolean("use-color-indicators", true);
+        double tps = plugin.getCurrentTps();
+        double critical = plugin.getConfigManager().getCriticalTPS();
+        ChatColor tpsColor;
+        Material statusMat;
+        if (tps >= critical) {
+            tpsColor = ChatColor.GREEN;
+            statusMat = Material.LIME_CONCRETE;
+        } else if (tps >= critical - 3) {
+            tpsColor = ChatColor.YELLOW;
+            statusMat = Material.YELLOW_CONCRETE;
+        } else {
+            tpsColor = ChatColor.RED;
+            statusMat = Material.RED_CONCRETE;
+        }
+        if (!useColors) statusMat = Material.PAPER;
+        String on = ChatColor.RED + plugin.getMessage("gui.common.on", "ON");
+        String off = ChatColor.GREEN + plugin.getMessage("gui.common.off", "OFF");
+        List<String> statusLore = new ArrayList<>();
+        statusLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.tps", "TPS: ") + tpsColor + String.format(Locale.US, "%.2f", tps));
+        statusLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.suspicious", "Suspicious chunks: ") + ChatColor.YELLOW + plugin.getProblemChunkCount());
+        statusLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.frozen", "Frozen chunks: ") + ChatColor.AQUA + plugin.getFrozenChunkCount());
+        statusLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.global_freeze", "Global freeze: ") + (plugin.isRedstoneFrozen() ? on : off));
+        statusLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.last_scan", "Last scan: ") + ChatColor.WHITE + dashboardTimeAgo(plugin.getLastScanTime()));
+        return loreItem(statusMat, ChatColor.translateAlternateColorCodes('&',
+                plugin.getMessage("gui.dashboard.status_title", "&c&lServer Status")), statusLore);
+    }
+
+    private ItemStack buildScanItem() {
+        List<String> scanLore = new ArrayList<>();
+        if (plugin.getScanManager() != null && plugin.getScanManager().isRunning()) {
+            scanLore.add(ChatColor.YELLOW + plugin.getMessage("gui.dashboard.scan_progress", "Scanning... {percent}%")
+                    .replace("{percent}", String.valueOf(plugin.getScanManager().getProgressPercent())));
+            scanLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.scan_cancel_lore", "Click to cancel."));
+        } else {
+            scanLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.scan_start_lore", "Click to start a full scan."));
+        }
+        return dashButton(Material.CLOCK, "gui.dashboard.scan", "&aRun Scan", scanLore);
+    }
+
+    private ItemStack buildFreezeItem() {
+        org.bukkit.configuration.file.FileConfiguration guiCfg = plugin.getFileManager().getGui();
+        boolean useColors = guiCfg == null || guiCfg.getBoolean("use-color-indicators", true);
+        boolean frozen = plugin.isRedstoneFrozen();
+        String on = ChatColor.RED + plugin.getMessage("gui.common.on", "ON");
+        String off = ChatColor.GREEN + plugin.getMessage("gui.common.off", "OFF");
+        List<String> freezeLore = new ArrayList<>();
+        freezeLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.global_freeze", "Global freeze: ") + (frozen ? on : off));
+        freezeLore.add(ChatColor.GRAY + plugin.getMessage("gui.dashboard.freeze_toggle_lore", "Click to toggle."));
+        Material freezeMat = !useColors ? Material.PACKED_ICE : (frozen ? Material.ICE : Material.BLUE_ICE);
+        return dashButton(freezeMat, "gui.dashboard.freeze", "&bToggle Global Freeze", freezeLore);
+    }
+
+    private void refreshDashboardItems(Inventory inv) {
+        inv.setItem(4, buildStatusItem());
+        inv.setItem(12, buildScanItem());
+        inv.setItem(14, buildFreezeItem());
+    }
+
+    public void openChunkInfoGui(Player player, ChunkCoordinate coord) {
+        markTransition(player);
+        org.bukkit.configuration.file.FileConfiguration guiCfg = plugin.getFileManager().getGui();
+        String rawTitle = guiCfg != null ? guiCfg.getString("chunk-info-title", "&cChunk Information")
+                : "Chunk Information";
+        Inventory gui = Bukkit.createInventory(this, 27, ChatColor.translateAlternateColorCodes('&', rawTitle));
+
+        ChunkData data = plugin.getChunkData(coord);
+        int redstone = data != null ? data.redstoneCount.get() : 0;
+        int entities = data != null ? data.entityCount.get() : 0;
+        int lagging = (data != null && data.redstoneTypes != null) ? data.redstoneTypes.size() : 0;
+        boolean stopped = plugin.isChunkRedstoneFrozen(coord);
+        boolean removed = plugin.isChunkRedstoneRemoved(coord);
+
+        int medium = guiCfg != null ? guiCfg.getInt("load-medium-threshold", 150) : 150;
+        int high = guiCfg != null ? guiCfg.getInt("load-high-threshold", 400) : 400;
+        int load = redstone + entities;
+        String loadLabel;
+        if (load >= high) loadLabel = ChatColor.RED + plugin.getMessage("gui.chunkinfo.load_high", "HIGH");
+        else if (load >= medium) loadLabel = ChatColor.YELLOW + plugin.getMessage("gui.chunkinfo.load_medium", "MEDIUM");
+        else loadLabel = ChatColor.GREEN + plugin.getMessage("gui.chunkinfo.load_low", "LOW");
+
+        String reason;
+        if (redstone > plugin.getMaxRedstone() && entities > plugin.getMaxEntities())
+            reason = plugin.getMessage("gui.chunkinfo.reason_both", "Redstone & entities over limit");
+        else if (redstone > plugin.getMaxRedstone()) reason = plugin.getMessage("gui.chunkinfo.reason_redstone", "Too much redstone");
+        else if (entities > plugin.getMaxEntities()) reason = plugin.getMessage("gui.chunkinfo.reason_entities", "Too many entities");
+        else reason = plugin.getMessage("gui.chunkinfo.reason_manual", "Manual inspection");
+
+        String detected = (data != null && data.firstDetected > 0)
+                ? dashboardTimeAgo(data.firstDetected) : plugin.getMessage("gui.chunkinfo.unknown", "unknown");
+
+        List<String> lore = new ArrayList<>();
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.world", "World: ") + ChatColor.WHITE + coord.world());
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.coordinates", "Coordinates: ") + ChatColor.WHITE + coord.toDisplayString()
+                + ChatColor.DARK_GRAY + " (" + plugin.getMessage("gui.chunkinfo.blocks", "blocks") + " " + (coord.x() * 16) + ", " + (coord.z() * 16) + ")");
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.redstone", "Redstone components: ") + ChatColor.RED + redstone);
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.entities", "Entities: ") + ChatColor.GREEN + entities);
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.lagging", "Lagging block types: ") + ChatColor.GOLD + lagging);
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.freeze_status", "Freeze status: ")
+                + (stopped ? ChatColor.AQUA + plugin.getMessage("gui.chunkinfo.frozen", "FROZEN") : ChatColor.GREEN + plugin.getMessage("gui.chunkinfo.active", "ACTIVE")));
+        if (removed) {
+            lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.removed_status", "Redstone: ")
+                    + ChatColor.RED + plugin.getMessage("gui.chunkinfo.removed", "REMOVED"));
+        }
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.reason", "Reason: ") + ChatColor.WHITE + reason);
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.detected", "Detected: ") + ChatColor.WHITE + detected);
+        lore.add(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.load", "Approx. load: ") + loadLabel);
+        gui.setItem(4, loreItem(Material.MAP, ChatColor.AQUA + plugin.getMessage("gui.chunkinfo.title", "Chunk {coord}").replace("{coord}", coord.toDisplayString()), lore));
+
+        gui.setItem(10, dashButton(Material.ENDER_PEARL, "gui.chunk_teleport", "&fTeleport to Chunk",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.teleport_lore", "Teleport to this chunk."))));
+
+        if (stopped) {
+            gui.setItem(12, dashButton(Material.BLUE_ICE, "gui.chunkinfo.unfreeze_stop", "&aUnfreeze Redstone",
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.unfreeze_stop_lore", "Resume redstone activity here."))));
+        } else {
+            gui.setItem(12, dashButton(Material.ICE, "gui.chunkinfo.freeze_stop", "&bFreeze Redstone (stop)",
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.freeze_stop_lore", "Stop redstone here without removing blocks."))));
+        }
+
+        if (removed) {
+            gui.setItem(14, dashButton(Material.EMERALD, "gui.chunkinfo.restore", "&aRestore Redstone",
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.restore_lore", "Restore previously removed redstone."))));
+        } else {
+            gui.setItem(14, dashButton(Material.REDSTONE_BLOCK, "gui.chunkinfo.remove", "&cRemove Redstone",
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.remove_lore", "Delete redstone blocks (restorable)."))));
+        }
+
+        gui.setItem(16, dashButton(Material.BLAZE_ROD, "gui.chunkinfo.remove_entities", "&6Remove Entities",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.remove_entities_lore", "Remove all non-player entities here."))));
+
+        gui.setItem(22, dashButton(Material.ARROW, "gui.chunkinfo.back_list", "&7Back to Chunk List",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage("gui.chunkinfo.back_list_lore", "Return to the chunk list."))));
+
+        PlayerGuiState prev = playerStates.get(player.getUniqueId());
+        PlayerGuiState state = new PlayerGuiState(GuiState.CHUNK_INFO);
+        state.chunkCoord = coord;
+        state.world = coord.world();
+        state.page = prev != null ? prev.page : 0;
+        state.sortMode = (prev != null && prev.sortMode != null) ? prev.sortMode : SortMode.COORDINATE;
+        playerStates.put(player.getUniqueId(), state);
+        player.openInventory(gui);
+    }
+
+    private String dashboardTimeAgo(long t) {
+        if (t <= 0) return plugin.getMessage("gui.time_never", "never");
+        long ago = (System.currentTimeMillis() - t) / 1000;
+        if (ago < 60) return plugin.getMessage("gui.time_just_now", "Just now");
+        if (ago < 3600) return (ago / 60) + plugin.getMessage("gui.time_minutes_ago", " minutes ago");
+        return (ago / 3600) + plugin.getMessage("gui.time_hours_ago", " hours ago");
+    }
+
+    private ItemStack loreItem(Material mat, String name, List<String> lore) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack dashButton(Material mat, String key, String defLabel, List<String> lore) {
+        String name = ChatColor.translateAlternateColorCodes('&',
+                plugin.getMessage(key, defLabel));
+        return loreItem(mat, name, lore);
+    }
+
+    private String dashName(String key, String defLabel) {
+        return ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&',
+                plugin.getMessage(key, defLabel)));
+    }
+
+    private void handleDashboardClick(Player player, String displayName) {
+        String s = ChatColor.stripColor(displayName);
+        if (s.equals(dashName("gui.dashboard.chunks", "&aProblem Chunks"))) {
+            openWorldSelectionGUI(player);
+        } else if (s.equals(dashName("gui.dashboard.scan", "&aRun Scan"))) {
+            boolean running = plugin.getScanManager() != null && plugin.getScanManager().isRunning();
+            player.closeInventory();
+            player.performCommand(running ? "rd scan cancel" : "rd scan");
+        } else if (s.equals(dashName("gui.dashboard.freeze", "&bToggle Global Freeze"))) {
+            player.performCommand(plugin.isRedstoneFrozen() ? "rd unfreeze" : "rd freeze");
+            openDashboard(player);
+        } else if (s.equals(dashName("gui.dashboard.reload", "&dReload Plugin"))) {
+            player.closeInventory();
+            player.performCommand("rd reload");
+        } else if (s.equals(dashName("gui.dashboard.close", "&cClose"))) {
+            player.closeInventory();
+        }
+    }
+
+    private void handleChunkInfoClick(Player player, PlayerGuiState state, String displayName) {
+        String s = ChatColor.stripColor(displayName);
+        ChunkCoordinate coord = state.chunkCoord;
+        if (coord == null) return;
+        if (s.equals(dashName("gui.chunkinfo.back_list", "&7Back to Chunk List"))) {
+            openChunksGUI(player, state.world != null ? state.world : coord.world(), state.page);
+        } else if (s.equals(dashName("gui.chunk_teleport", "&fTeleport to Chunk"))) {
+            plugin.teleportToChunk(player, coord);
+            player.closeInventory();
+        } else if (s.equals(dashName("gui.chunkinfo.freeze_stop", "&bFreeze Redstone (stop)"))) {
+            plugin.freezeChunkRedstone(player, coord);
+            openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName("gui.chunkinfo.unfreeze_stop", "&aUnfreeze Redstone"))) {
+            plugin.unfreezeChunkRedstone(player, coord);
+            openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName("gui.chunkinfo.remove", "&cRemove Redstone"))) {
+            plugin.disableRedstoneInChunk(player, coord);
+            openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName("gui.chunkinfo.restore", "&aRestore Redstone"))) {
+            plugin.restoreRedstoneInChunk(player, coord);
+            openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName("gui.chunkinfo.remove_entities", "&6Remove Entities"))) {
+            plugin.removeEntitiesInChunk(player, coord);
+            openChunkInfoGui(player, coord);
+        }
     }
 
     public void openWorldSelectionGUI(Player player) {
@@ -99,6 +370,17 @@ public class GuiManager implements Listener, InventoryHolder {
             }
             gui.setItem(centerSlots[i], item);
         }
+
+        ItemStack backBtn = new ItemStack(Material.ARROW);
+        ItemMeta backMeta = backBtn.getItemMeta();
+        if (backMeta != null) {
+            backMeta.setDisplayName(ChatColor.translateAlternateColorCodes('&',
+                    plugin.getMessage("gui.world_back", "&7Back to Menu")));
+            backMeta.setLore(Collections.singletonList(ChatColor.GRAY +
+                    plugin.getMessage("gui.world_back_lore", "Return to the main menu.")));
+            backBtn.setItemMeta(backMeta);
+        }
+        gui.setItem(40, backBtn);
 
         PlayerGuiState state = playerStates.get(player.getUniqueId());
         if (state == null) {
@@ -295,7 +577,7 @@ public class GuiManager implements Listener, InventoryHolder {
                 ChatColor.GREEN + plugin.getMessage("gui.chunk_entities", "Entities: {count}").replace("{count}", String.valueOf(data.entityCount.get())),
                 ChatColor.GRAY + plugin.getMessage("gui.chunk_detected", "Detected: {time}").replace("{time}", timeAgo),
                 "",
-                ChatColor.YELLOW + plugin.getMessage("gui.chunk_lclick", "Left click → Open actions"),
+                ChatColor.YELLOW + plugin.getMessage("gui.chunk_lclick_info", "Left click → Open info"),
                 ChatColor.GOLD + plugin.getMessage("gui.chunk_shift_rclick", "Shift + Right click → Remove redstone")
         );
         meta.setLore(lore);
@@ -449,10 +731,22 @@ public class GuiManager implements Listener, InventoryHolder {
             case CHUNK_ACTIONS:
                 handleChunkActionsClick(player, state, displayName);
                 break;
+            case DASHBOARD:
+                handleDashboardClick(player, displayName);
+                break;
+            case CHUNK_INFO:
+                handleChunkInfoClick(player, state, displayName);
+                break;
         }
     }
 
     private void handleWorldSelectionClick(Player player, String displayName) {
+        String back = ChatColor.stripColor(ChatColor.translateAlternateColorCodes('&',
+                plugin.getMessage("gui.world_back", "&7Back to Menu")));
+        if (ChatColor.stripColor(displayName).equals(back)) {
+            openDashboard(player);
+            return;
+        }
         openChunksGUI(player, displayName, 0);
     }
 
@@ -498,7 +792,7 @@ public class GuiManager implements Listener, InventoryHolder {
                         player.closeInventory();
                         openChunksGUI(player, state.world, state.page);
                     } else if (!isShiftClick && !isRightClick) {
-                        openChunkActionsMenu(player, coord);
+                        openChunkInfoGui(player, coord);
                     }
                 } catch (NumberFormatException e) {
                     player.sendMessage(ChatColor.RED + plugin.getMessage("gui.error_chunk_processing", "Error processing coordinates"));

@@ -63,7 +63,7 @@ public class MessageManager {
         messagesFile = new File(langDir, "messages_" + lang + ".yml");
 
         if (!messagesFile.exists()) {
-            InputStream resource = plugin.getResource("messages_" + lang + ".yml");
+            InputStream resource = plugin.getResource("lang/messages_" + lang + ".yml");
             if (resource != null) {
                 try {
                     Files.copy(resource, messagesFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -102,7 +102,7 @@ public class MessageManager {
             File langFile = new File(langDir, "messages_" + lang + ".yml");
 
             if (!langFile.exists()) {
-                InputStream resource = plugin.getResource("messages_" + lang + ".yml");
+                InputStream resource = plugin.getResource("lang/messages_" + lang + ".yml");
                 if (resource != null) {
                     try {
                         Files.copy(resource, langFile.toPath(), StandardCopyOption.REPLACE_EXISTING);

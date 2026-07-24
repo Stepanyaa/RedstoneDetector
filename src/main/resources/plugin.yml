@@ -1,5 +1,5 @@
 name: RedstoneDetector
-version: '1.0.7-fix'
+version: '1.1.0'
 main: ru.stepanyaa.redstoneDetector.RedstoneDetector
 api-version: "1.16"
 authors: [Stepanyaa]
@@ -8,11 +8,11 @@ website: https://discord.com/invite/PXDzCQZUch
 commands:
   redstonedetector:
     description: The main plugin command
-    usage: /redstonedetector [reload|gui|redstone|stopredstone]
+    usage: /rd [gui|scan|status|info|freeze|unfreeze|reload]
     aliases: [rd, reddetect]
   rd:
-    description: The alias of the main team
-    usage: /rd [reload|gui|redstone|stopredstone]
+    description: The alias of the main command
+    usage: /rd [gui|scan|status|info|freeze|unfreeze|reload]
   rdcancel:
     description: Cancel chunk search
     usage: /rdcancel
@@ -21,12 +21,26 @@ commands:
     usage: /rdpage
 permissions:
   redstonedetector.admin:
+    description: Full access to all RedstoneDetector features.
     default: op
     children:
       redstonedetector.command: true
-  redstonedetector.command:
-    default: false
-    children:
+      redstonedetector.gui: true
       redstonedetector.scan: true
+      redstonedetector.freeze: true
+      redstonedetector.reload: true
+  redstonedetector.command:
+    description: Base access to plugin commands.
+    default: op
+  redstonedetector.gui:
+    description: Open the administrator GUI and view status/info.
+    default: op
   redstonedetector.scan:
+    description: Start and cancel chunk scans.
+    default: op
+  redstonedetector.freeze:
+    description: Freeze and unfreeze redstone.
+    default: op
+  redstonedetector.reload:
+    description: Reload the plugin configuration.
     default: op

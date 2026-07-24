@@ -24,6 +24,8 @@
  */
 package ru.stepanyaa.redstoneDetector;
 
+import dev.faststats.ErrorTracker;
+import dev.faststats.data.Metric;
 import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
@@ -43,6 +45,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bstats.bukkit.Metrics;
+import dev.faststats.bukkit.BukkitContext;
 
 import java.io.File;
 import java.io.IOException;
@@ -51,6 +54,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class RedstoneDetector extends JavaPlugin implements Listener, TabCompleter {
+    public static final ErrorTracker ERROR_TRACKER = ErrorTracker.contextAware();
+    private final AtomicInteger gameCount = new AtomicInteger();
     private static class SnapshotContainer {
         String worldName;
         int x, z, minY, maxY;
@@ -62,18 +67,31 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
             this.minY = min; this.maxY = max; this.entities = entities;
         }
     }
+    private final BukkitContext context = new BukkitContext.Factory(this, "b518aa9851ae0e15397ea3c258d785f2")
+            .errorTrackerService(ERROR_TRACKER)
+            .metrics(factory -> factory
+                    .addMetric(Metric.number("game_count", gameCount::get))
+                    .addMetric(Metric.string("server_version", () -> "1.0.0"))
+
+                    .onFlush(() -> gameCount.set(0))
+
+                    .create())
+            .create();
 
     private ConfigManager configManager;
     private MessageManager messageManager;
     private TPSMonitor tpsMonitor;
     private UpdateChecker updateChecker;
     private GuiManager guiManager;
+    private FileManager fileManager;
+    private ScanManager scanManager;
 
     private static boolean isPurpur = false;
     private int lowTpsCounter = 0;
 
     private final Map<ChunkCoordinate, ChunkData> chunkMap = new ConcurrentHashMap<>();
-    private final Map<ChunkCoordinate, Map<Location, Material>> redstoneBackups = new ConcurrentHashMap<>();
+    private final Map<ChunkCoordinate, Map<Location, org.bukkit.block.data.BlockData>> redstoneBackups = new ConcurrentHashMap<>();
+    private final Set<ChunkCoordinate> frozenChunks = ConcurrentHashMap.newKeySet();
     private final Set<Material> redstoneMaterials = new HashSet<>();
 
     private boolean freezeRedstone = false;
@@ -96,6 +114,9 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         saveDefaultConfig();
         reloadConfig();
 
+        this.fileManager = new FileManager(this);
+        fileManager.loadAll();
+
         this.configManager = new ConfigManager(this);
         configManager.loadConfig();
 
@@ -108,6 +129,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         this.tpsMonitor = new TPSMonitor(this);
         this.updateChecker = new UpdateChecker(this);
         this.guiManager = new GuiManager(this);
+        this.scanManager = new ScanManager(this);
 
         chunkDataFile = new File(getDataFolder(), "chunk-data.yml");
         loadChunkData();
@@ -153,18 +175,31 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private void initializeRedstoneMaterials() {
         redstoneMaterials.clear();
 
-        Material[] materials = {
-                Material.REDSTONE_WIRE, Material.REPEATER, Material.COMPARATOR,
-                Material.PISTON, Material.STICKY_PISTON, Material.OBSERVER,
-                Material.DISPENSER, Material.DROPPER, Material.HOPPER,
-                Material.REDSTONE_TORCH, Material.REDSTONE_BLOCK, Material.LEVER,
-                Material.STONE_BUTTON, Material.OAK_BUTTON, Material.TRIPWIRE_HOOK,
-                Material.TARGET
-        };
+        java.util.List<String> names = new java.util.ArrayList<>();
+        if (fileManager != null && fileManager.getBlocks() != null) {
+            names.addAll(fileManager.getBlocks().getStringList("redstone-blocks"));
+            names.addAll(fileManager.getBlocks().getStringList("optional-blocks"));
+        }
 
-        Collections.addAll(redstoneMaterials, materials);
-        addMaterialIfExists("SCULK_SENSOR");
-        addMaterialIfExists("CALIBRATED_SCULK_SENSOR");
+        if (names.isEmpty()) {
+            String[] defaults = {
+                    "REDSTONE_WIRE", "REPEATER", "COMPARATOR", "PISTON", "STICKY_PISTON",
+                    "OBSERVER", "DISPENSER", "DROPPER", "HOPPER", "REDSTONE_TORCH",
+                    "REDSTONE_BLOCK", "LEVER", "STONE_BUTTON", "OAK_BUTTON",
+                    "TRIPWIRE_HOOK", "TARGET", "SCULK_SENSOR", "CALIBRATED_SCULK_SENSOR"
+            };
+            Collections.addAll(names, defaults);
+        }
+
+        int loaded = 0;
+        for (String name : names) {
+            if (name == null) continue;
+            Material mat = Material.getMaterial(name.trim().toUpperCase(java.util.Locale.ROOT));
+            if (mat != null && redstoneMaterials.add(mat)) {
+                loaded++;
+            }
+        }
+        getLogger().info("Loaded " + loaded + " redstone/lag block types from blocks.yml.");
     }
 
     private void addMaterialIfExists(String materialName) {
@@ -240,7 +275,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                     return true;
                 }
                 Player player = (Player) sender;
-                if (!player.hasPermission("redstonedetector.admin")) {
+                if (!hasPerm(player, "redstonedetector.gui")) {
                     player.sendMessage(ChatColor.RED + getMessage("command.no_permission_gui",
                             "You do not have permission to use the GUI!"));
                     return true;
@@ -266,12 +301,20 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 return handleReload(sender);
             case "gui":
                 return handleGui(sender);
+            case "status":
+                return handleStatus(sender);
+            case "info":
+                return handleInfo(sender);
+            case "freeze":
+                return handleFreeze(sender, true);
+            case "unfreeze":
+                return handleFreeze(sender, false);
             case "redstone":
                 return handleRedstone(sender, args);
             case "stopredstone":
                 return handleStopRedstone(sender);
             case "scan":
-                return handleScan(sender);
+                return handleScan(sender, args);
             default:
                 sendHelp(sender);
                 return true;
@@ -279,16 +322,18 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     private boolean handleReload(CommandSender sender) {
-        if (!sender.hasPermission("redstonedetector.admin")) {
+        if (!hasPerm(sender, "redstonedetector.reload")) {
             sender.sendMessage(ChatColor.RED + getMessage("command.no_permission_reload",
                     "You do not have permission to reload the plugin!"));
             return true;
         }
 
         reloadConfig();
+        fileManager.loadAll();
         configManager.loadConfig();
         messageManager.loadMessages();
         messageManager.updateMessagesFiles();
+        initializeRedstoneMaterials();
 
         sender.sendMessage(ChatColor.GREEN + getMessage("command.reload_success",
                 "Configuration reloaded!"));
@@ -307,7 +352,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         }
 
         Player player = (Player) sender;
-        if (!player.hasPermission("redstonedetector.admin")) {
+        if (!hasPerm(player, "redstonedetector.gui")) {
             player.sendMessage(ChatColor.RED + getMessage("command.no_permission_gui",
                     "You do not have permission to use the GUI!"));
             return true;
@@ -377,18 +422,115 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         return true;
     }
 
-    private boolean handleScan(CommandSender sender) {
-        if (isHybridServer()) {
-            runHybridScan();
-        } else {
-            Bukkit.getScheduler().runTaskAsynchronously(this, this::scanAllChunks);
+    private boolean handleScan(CommandSender sender, String[] args) {
+        if (!hasPerm(sender, "redstonedetector.scan")) {
+            sender.sendMessage(color(getMessage("cmd.no_permission",
+                    "&cYou don't have permission for this.")));
+            return true;
         }
-        sender.sendMessage(ChatColor.GREEN + getMessage( "command.scan_started","Scanning started..."));
+
+        if (args.length >= 2 && args[1].equalsIgnoreCase("cancel")) {
+            if (scanManager.requestCancel()) {
+                sender.sendMessage(color(getMessage("cmd.scan.cancelled",
+                        "&eScan cancellation requested.")));
+            } else {
+                sender.sendMessage(color("&cNo scan is currently running."));
+            }
+            return true;
+        }
+
+        if (scanManager.isRunning()) {
+            sender.sendMessage(color(getMessage("cmd.scan.busy",
+                    "&cA scan is already running: &e{percent}%")
+                    .replace("{percent}", String.valueOf(scanManager.getProgressPercent()))));
+            return true;
+        }
+
+        if (scanManager.startScan(sender)) {
+            sender.sendMessage(color(getMessage("cmd.scan.started",
+                    "&aScan started. Use &e/rd scan cancel &ato stop it.")));
+        } else {
+            sender.sendMessage(color(getMessage("cmd.scan.busy",
+                    "&cA scan is already running: &e{percent}%")
+                    .replace("{percent}", String.valueOf(scanManager.getProgressPercent()))));
+        }
+        return true;
+    }
+
+    private boolean handleStatus(CommandSender sender) {
+        if (!hasPerm(sender, "redstonedetector.gui")) {
+            sender.sendMessage(color(getMessage("cmd.no_permission",
+                    "&cYou don't have permission for this.")));
+            return true;
+        }
+        double tps = getCurrentTps();
+        String tpsColor = tps >= configManager.getCriticalTPS() ? "&a"
+                : (tps >= configManager.getCriticalTPS() - 3 ? "&e" : "&c");
+        sender.sendMessage(color(getMessage("cmd.status.header",
+                "&c&lRedstoneDetector &7- Status")));
+        sender.sendMessage(color(getMessage("cmd.status.tps", "&7TPS: {color}{tps}")
+                .replace("{color}", tpsColor)
+                .replace("{tps}", String.format(java.util.Locale.US, "%.2f", tps))));
+        sender.sendMessage(color(getMessage("cmd.status.problems", "&7Suspicious chunks: &e{count}")
+                .replace("{count}", String.valueOf(getProblemChunkCount()))));
+        sender.sendMessage(color(getMessage("cmd.status.frozen", "&7Frozen chunks: &b{count}")
+                .replace("{count}", String.valueOf(getFrozenChunkCount()))));
+        String state = freezeRedstone ? getMessage("cmd.state.on", "&cON")
+                : getMessage("cmd.state.off", "&aOFF");
+        sender.sendMessage(color(getMessage("cmd.status.global_freeze",
+                "&7Global redstone freeze: {state}").replace("{state}", state)));
+        sender.sendMessage(color(getMessage("cmd.status.last_scan", "&7Last scan: &f{time}")
+                .replace("{time}", formatLastScan())));
+        return true;
+    }
+
+    private boolean handleInfo(CommandSender sender) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage(ChatColor.RED + getMessage("command.player_only",
+                    "This command is for players only!"));
+            return true;
+        }
+        if (!hasPerm(sender, "redstonedetector.gui")) {
+            sender.sendMessage(color(getMessage("cmd.no_permission",
+                    "&cYou don't have permission for this.")));
+            return true;
+        }
+        Player player = (Player) sender;
+        Chunk chunk = player.getLocation().getChunk();
+        ChunkCoordinate coord = new ChunkCoordinate(chunk.getWorld().getName(), chunk.getX(), chunk.getZ());
+        if (chunkMap.get(coord) == null) {
+            scanSingleChunk(chunk);
+        }
+        if (chunkMap.get(coord) == null) {
+            player.sendMessage(color(getMessage("cmd.info.no_data",
+                    "&eNo detection data for your current chunk.")));
+            return true;
+        }
+        guiManager.openChunkInfoGui(player, coord);
+        return true;
+    }
+
+    private boolean handleFreeze(CommandSender sender, boolean freeze) {
+        if (!hasPerm(sender, "redstonedetector.freeze")) {
+            sender.sendMessage(color(getMessage("cmd.no_permission",
+                    "&cYou don't have permission for this.")));
+            return true;
+        }
+        setFreeze(freeze, true);
+        if (freeze) {
+            sender.sendMessage(color(getMessage("cmd.freeze.on",
+                    "&aGlobal redstone freeze &cENABLED&a.")));
+            getLogger().info("Global redstone freeze ENABLED by " + senderName(sender));
+        } else {
+            sender.sendMessage(color(getMessage("cmd.freeze.off",
+                    "&aGlobal redstone freeze &2DISABLED&a.")));
+            getLogger().info("Global redstone freeze DISABLED by " + senderName(sender));
+        }
         return true;
     }
 
     private boolean openGuiCommand(Player player) {
-        guiManager.openWorldSelectionGUI(player);
+        guiManager.openDashboard(player);
         return true;
     }
 
@@ -396,31 +538,35 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         sender.sendMessage(ChatColor.GOLD + getMessage("command.help_header",
                 "=== RedstoneDetector Help ==="));
 
-        if (sender.hasPermission("redstonedetector.admin")) {
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector gui" + ChatColor.WHITE +
-                    getMessage("command.help_gui", " - Open the interface"));
+        if (hasPerm(sender, "redstonedetector.gui")) {
+            sender.sendMessage(helpLine("/rd gui", getMessage("command.help_gui", " - Open the interface")));
+            sender.sendMessage(helpLine("/rd status", getMessage("command.help_status", " - Show server status")));
+            sender.sendMessage(helpLine("/rd info", getMessage("command.help_info", " - Info about your current chunk")));
         }
-        if (sender.hasPermission("redstonedetector.reload")) {
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector reload" + ChatColor.WHITE +
-                    getMessage("command.help_reload", " - Reload the configuration"));
+        if (hasPerm(sender, "redstonedetector.scan")) {
+            sender.sendMessage(helpLine("/rd scan", getMessage("command.help_scan", " - Force chunk scan")));
+            sender.sendMessage(helpLine("/rd scan cancel", getMessage("command.help_scan_cancel", " - Cancel a running scan")));
         }
-        if (sender.hasPermission("redstonedetector.redstone")) {
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector redstone freeze" + ChatColor.WHITE +
-                    getMessage("command.help_redstone_freeze", " - Freeze redstone"));
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector redstone unfreeze" + ChatColor.WHITE +
-                    getMessage("command.help_redstone_unfreeze", " - Unfreeze redstone"));
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector redstone status" + ChatColor.WHITE +
-                    getMessage("command.help_redstone_status", " - Redstone status"));
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector stopredstone" + ChatColor.WHITE +
-                    getMessage("command.help_stopredstone", " - Emergency stop"));
+        if (hasPerm(sender, "redstonedetector.freeze")) {
+            sender.sendMessage(helpLine("/rd freeze", getMessage("command.help_freeze", " - Enable global redstone freeze")));
+            sender.sendMessage(helpLine("/rd unfreeze", getMessage("command.help_unfreeze", " - Disable global redstone freeze")));
         }
-        if (sender.hasPermission("redstonedetector.scan")) {
-            sender.sendMessage(ChatColor.YELLOW + "/redstonedetector scan" + ChatColor.WHITE +
-                    getMessage("command.help_scan", " - Force chunk scan"));
+        if (hasPerm(sender, "redstonedetector.redstone")) {
+            sender.sendMessage(helpLine("/rd redstone freeze", getMessage("command.help_redstone_freeze", " - Freeze redstone")));
+            sender.sendMessage(helpLine("/rd redstone unfreeze", getMessage("command.help_redstone_unfreeze", " - Unfreeze redstone")));
+            sender.sendMessage(helpLine("/rd redstone status", getMessage("command.help_redstone_status", " - Redstone status")));
+            sender.sendMessage(helpLine("/rd stopredstone", getMessage("command.help_stopredstone", " - Emergency stop")));
+        }
+        if (hasPerm(sender, "redstonedetector.reload")) {
+            sender.sendMessage(helpLine("/rd reload", getMessage("command.help_reload", " - Reload the configuration")));
         }
 
         sender.sendMessage(ChatColor.GOLD + getMessage("command.help_aliases", "Aliases: ") +
-                ChatColor.YELLOW + "/rd");
+                ChatColor.YELLOW + "/rd, /redstonedetector");
+    }
+
+    private String helpLine(String cmd, String desc) {
+        return ChatColor.YELLOW + cmd + ChatColor.WHITE + desc;
     }
 
     @Override
@@ -428,18 +574,29 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         if (cmd.getName().equalsIgnoreCase("redstonedetector") || cmd.getName().equalsIgnoreCase("rd")) {
             if (args.length == 1) {
                 List<String> completions = new ArrayList<>();
-                if (sender.hasPermission("redstonedetector.admin")) completions.add("gui");
-                if (sender.hasPermission("redstonedetector.reload")) completions.add("reload");
-                if (sender.hasPermission("redstonedetector.admin")) completions.add("help");
-                if (sender.hasPermission("redstonedetector.redstone")) {
+                if (hasPerm(sender, "redstonedetector.gui")) {
+                    completions.add("gui");
+                    completions.add("status");
+                    completions.add("info");
+                }
+                if (hasPerm(sender, "redstonedetector.scan")) completions.add("scan");
+                if (hasPerm(sender, "redstonedetector.freeze")) {
+                    completions.add("freeze");
+                    completions.add("unfreeze");
+                }
+                if (hasPerm(sender, "redstonedetector.reload")) completions.add("reload");
+                if (hasPerm(sender, "redstonedetector.gui")) completions.add("help");
+                if (hasPerm(sender, "redstonedetector.freeze")) {
                     completions.add("redstone");
                     completions.add("stopredstone");
                 }
-                if (sender.hasPermission("redstonedetector.scan")) completions.add("scan");
                 return completions;
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("redstone")) {
                 return Arrays.asList("freeze", "unfreeze", "status");
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("scan")) {
+                return Collections.singletonList("cancel");
             }
         }
         return Collections.emptyList();
@@ -465,21 +622,21 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onRedstoneEvent(BlockRedstoneEvent event) {
-        if (freezeRedstone) {
+        if (freezeRedstone || isInFrozenChunk(event.getBlock())) {
             event.setNewCurrent(0);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPistonExtend(BlockPistonExtendEvent event) {
-        if (freezeRedstone) {
+        if (freezeRedstone || isInFrozenChunk(event.getBlock())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPistonRetract(BlockPistonRetractEvent event) {
-        if (freezeRedstone) {
+        if (freezeRedstone || isInFrozenChunk(event.getBlock())) {
             event.setCancelled(true);
         }
     }
@@ -969,7 +1126,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         Chunk chunk = world.getChunkAt(coord.x(), coord.z());
         if (!chunk.isLoaded()) return;
 
-        Map<Location, Material> backup = new HashMap<>();
+        Map<Location, org.bukkit.block.data.BlockData> backup = new HashMap<>();
         int removed = 0;
 
         for (int y = world.getMinHeight(); y < world.getMaxHeight(); y++) {
@@ -977,8 +1134,8 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
                 for (int z = 0; z < 16; z++) {
                     Block block = chunk.getBlock(x, y, z);
                     if (isRedstoneComponent(block.getType())) {
-                        backup.put(block.getLocation(), block.getType());
-                        block.setType(Material.AIR);
+                        backup.put(block.getLocation(), block.getBlockData().clone());
+                        block.setType(Material.AIR, false);
                         removed++;
                     }
                 }
@@ -1012,14 +1169,14 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     }
 
     public void restoreRedstoneInChunk(ChunkCoordinate coord, String initiator) {
-        Map<Location, Material> backup = redstoneBackups.get(coord);
+        Map<Location, org.bukkit.block.data.BlockData> backup = redstoneBackups.get(coord);
         if (backup == null || backup.isEmpty()) return;
 
         int restored = 0;
-        for (Map.Entry<Location, Material> entry : backup.entrySet()) {
+        for (Map.Entry<Location, org.bukkit.block.data.BlockData> entry : backup.entrySet()) {
             Block block = entry.getKey().getBlock();
             if (block.isEmpty()) {
-                block.setType(entry.getValue());
+                block.setBlockData(entry.getValue(), false);
                 restored++;
             }
         }
@@ -1180,5 +1337,129 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     public int getMaxEntities() {
         return configManager.getMaxEntities();
+    }
+
+    private volatile long statsCacheTime = 0L;
+    private volatile int cachedProblemCount = 0;
+
+    private boolean hasPerm(CommandSender sender, String perm) {
+        return sender.hasPermission(perm) || sender.hasPermission("redstonedetector.admin");
+    }
+
+    private String color(String msg) {
+        return ChatColor.translateAlternateColorCodes('&', msg);
+    }
+
+    private String senderName(CommandSender sender) {
+        return sender instanceof Player ? ((Player) sender).getName() : "CONSOLE";
+    }
+
+    private String formatLastScan() {
+        long t = getLastScanTime();
+        if (t <= 0) return "never";
+        long ago = (System.currentTimeMillis() - t) / 1000;
+        if (ago < 60) return ago + "s ago";
+        if (ago < 3600) return (ago / 60) + "m ago";
+        return (ago / 3600) + "h ago";
+    }
+
+    public FileManager getFileManager() {
+        return fileManager;
+    }
+
+    public ScanManager getScanManager() {
+        return scanManager;
+    }
+
+    public String formatMessage(String key, String def) {
+        return fileManager != null ? getMessage(key, def) : def;
+    }
+
+    public boolean scanSingleChunk(Chunk chunk) {
+        scanChunk(chunk);
+        ChunkCoordinate coord = new ChunkCoordinate(
+                chunk.getWorld().getName(), chunk.getX(), chunk.getZ());
+        ChunkData data = chunkMap.get(coord);
+        if (data == null) return false;
+        return data.redstoneCount.get() > getMaxRedstone()
+                || data.entityCount.get() > getMaxEntities();
+    }
+
+    public int getProblemChunkCount() {
+        long now = System.currentTimeMillis();
+        long ttl = configManager != null ? configManager.getStatsCacheMs() : 1000L;
+        if (now - statsCacheTime < ttl) return cachedProblemCount;
+        int count = 0;
+        int maxR = getMaxRedstone();
+        int maxE = getMaxEntities();
+        for (ChunkData data : chunkMap.values()) {
+            if (data.clearedByAdmin) continue;
+            if (data.redstoneCount.get() > maxR || data.entityCount.get() > maxE) count++;
+        }
+        cachedProblemCount = count;
+        statsCacheTime = now;
+        return count;
+    }
+
+    public int getFrozenChunkCount() {
+        return frozenChunks.size();
+    }
+
+    public boolean isChunkFrozen(ChunkCoordinate coord) {
+        return redstoneBackups.containsKey(coord);
+    }
+
+    public boolean isChunkRedstoneFrozen(ChunkCoordinate coord) {
+        return frozenChunks.contains(coord);
+    }
+
+    public boolean isChunkRedstoneRemoved(ChunkCoordinate coord) {
+        return redstoneBackups.containsKey(coord);
+    }
+
+    private boolean isInFrozenChunk(Block block) {
+        if (frozenChunks.isEmpty() || block == null) return false;
+        Chunk c = block.getChunk();
+        return frozenChunks.contains(new ChunkCoordinate(block.getWorld().getName(), c.getX(), c.getZ()));
+    }
+
+    public void freezeChunkRedstone(Player player, ChunkCoordinate coord) {
+        frozenChunks.add(coord);
+        player.sendMessage(color(getMessage("chunk.redstone_frozen",
+                "&bRedstone frozen (stopped) in chunk {coord}").replace("{coord}", coord.toDisplayString())));
+        getLogger().info("Redstone frozen (stopped) in chunk " + coord.toDisplayString() + " by " + player.getName());
+    }
+
+    public void unfreezeChunkRedstone(Player player, ChunkCoordinate coord) {
+        frozenChunks.remove(coord);
+        player.sendMessage(color(getMessage("chunk.redstone_unfrozen",
+                "&aRedstone resumed in chunk {coord}").replace("{coord}", coord.toDisplayString())));
+        getLogger().info("Redstone resumed in chunk " + coord.toDisplayString() + " by " + player.getName());
+    }
+
+    public boolean isRedstoneFrozen() {
+        return freezeRedstone;
+    }
+
+    public void setFreeze(boolean freeze, boolean manual) {
+        this.freezeRedstone = freeze;
+        this.manualFreezeOverride = manual;
+        if (freeze) this.freezeStartTime = System.currentTimeMillis();
+    }
+
+    public long getLastScanTime() {
+        return scanManager != null ? scanManager.getLastScanTime() : 0L;
+    }
+
+    public double getCurrentTps() {
+        return tpsMonitor != null ? tpsMonitor.getTPS() : 20.0;
+    }
+
+    public ChunkData getChunkData(ChunkCoordinate coord) {
+        return chunkMap.get(coord);
+    }
+
+    public Set<Material> getRedstoneMaterials() {
+        return redstoneMaterials;
     }
 }

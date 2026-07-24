@@ -4,8 +4,24 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="Fixed a problem with languages. &quot;No English massage in the file #1&quot;">
+    <list default="true" id="d724d5e9-b186-418e-b2ce-006aadce0287" name="Changes" comment="Fixed the year in the license.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/RedstoneDetector.iml" beforeDir="false" afterPath="$PROJECT_DIR$/RedstoneDetector.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/ConfigManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/ConfigManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/GuiManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/MessageManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/MessageManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/RedstoneDetector.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/UpdateChecker.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/ru/stepanyaa/redstoneDetector/UpdateChecker.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/config.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/config.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_de.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_en.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_fr.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_pl.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_pt.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_ru.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/messages_tr.yml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/plugin.yml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/plugin.yml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -60,7 +76,7 @@
     "codeWithMe.voiceChat.enabledByDefault": "false",
     "git-widget-placeholder": "main",
     "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "C:/Users/Stepan Karpov/IdeaProjects/Redstone detector",
+    "last_opened_file_path": "C:/Users/Stepan/IdeaProjects/Redstone detector/src/main/resources/lang",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -73,6 +89,9 @@
   }
 }]]></component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\Stepan\IdeaProjects\Redstone detector\src\main\resources\lang" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources" />
       <recent name="C:\Users\Stepan Karpov\IdeaProjects\Redstone detector\src\main\resources\lang" />
@@ -179,7 +198,15 @@
       <option name="project" value="LOCAL" />
       <updated>1777358998107</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="Fixed the year in the license.">
+      <option name="closed" value="true" />
+      <created>1778779664152</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1778779664152</updated>
+    </task>
+    <option name="localTasksCounter" value="12" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -207,6 +234,7 @@
     <MESSAGE value="V1.0.7" />
     <MESSAGE value="Added missing files" />
     <MESSAGE value="Fixed a problem with languages. &quot;No English massage in the file #1&quot;" />
-    <option name="LAST_COMMIT_MESSAGE" value="Fixed a problem with languages. &quot;No English massage in the file #1&quot;" />
+    <MESSAGE value="Fixed the year in the license." />
+    <option name="LAST_COMMIT_MESSAGE" value="Fixed the year in the license." />
   </component>
 </project>
