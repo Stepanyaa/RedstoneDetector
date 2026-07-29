@@ -1,0 +1,48 @@
+name: RedstoneDetector
+version: '1.2.0'
+main: ru.stepanyaa.redstoneDetector.RedstoneDetector
+api-version: "1.16"
+# One jar for every core: Bukkit, Spigot, Paper, Purpur and Folia.
+folia-supported: true
+authors: [Stepanyaa]
+description: A plugin for protecting servers from lag machines.
+website: https://discord.com/invite/PXDzCQZUch
+commands:
+  redstonedetector:
+    description: The main plugin command
+    usage: /rd [gui|scan|status|info|freeze|unfreeze|reload]
+    aliases: [rd, reddetect]
+  rd:
+    description: The alias of the main command
+    usage: /rd [gui|scan|status|info|freeze|unfreeze|reload]
+  rdcancel:
+    description: Cancel chunk search
+    usage: /rdcancel
+  rdpage:
+    description: Internal pagination command
+    usage: /rdpage
+permissions:
+  redstonedetector.admin:
+    description: Full access to all RedstoneDetector features.
+    default: op
+    children:
+      redstonedetector.command: true
+      redstonedetector.gui: true
+      redstonedetector.scan: true
+      redstonedetector.freeze: true
+      redstonedetector.reload: true
+  redstonedetector.command:
+    description: Base access to plugin commands.
+    default: op
+  redstonedetector.gui:
+    description: Open the administrator GUI and view status/info.
+    default: op
+  redstonedetector.scan:
+    description: Start and cancel chunk scans.
+    default: op
+  redstonedetector.freeze:
+    description: Freeze and unfreeze redstone.
+    default: op
+  redstonedetector.reload:
+    description: Reload the plugin configuration.
+    default: op

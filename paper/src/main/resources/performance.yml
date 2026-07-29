@@ -1,0 +1,94 @@
+# ==========================================================
+#  RedstoneDetector - performance.yml
+#  Performance and scanning tuning.
+# ==========================================================
+
+# Number of chunks scanned per server tick (background scanner + queued scans).
+chunks-per-tick: 3
+
+# Run the automatic scan when the server TPS drops below the critical level.
+scan-on-low-tps: true
+
+# Only scan chunks that are currently loaded.
+scan-loaded-chunks: true
+
+# Heavy-scan tuning (used by hybrid/large scans).
+heavy-scan-radius: 10000
+heavy-scan-chunks-per-tick-base: 5
+
+# Cache dashboard statistics for this many milliseconds.
+# Reduces recalculation when the GUI refreshes frequently.
+stats-cache-ms: 1000
+
+# Minimum interval (ms) between two manual scans.
+# Protects against accidental re-launch spam.
+scan-cooldown-ms: 3000
+
+# ==========================================================
+#  Smart detection & intelligent freeze (added in 1.2.0)
+# ==========================================================
+
+# Enable per-chunk intelligent freeze. When true, low TPS no longer freezes
+# ALL redstone on the server; instead only the guilty (most active) chunks are
+# frozen, so normal player farms keep running.
+intelligent-freeze-enabled: true
+
+# Number of block updates per second that maps to an update score of 100.
+# Lower it to make the detector more sensitive to update activity.
+update-score-threshold: 200
+
+# A chunk is frozen automatically (regardless of TPS) once it generates at
+# least this many block updates per second.
+auto-freeze-updates-per-second: 800
+
+# When the server TPS is below critical-tps, the single most active chunk is
+# frozen once it exceeds this many updates per second.
+low-tps-freeze-updates-per-second: 300
+
+# Automatically release an auto-frozen chunk after this many seconds so it can
+# be re-evaluated. Set to -1 to keep chunks frozen until manually released.
+auto-unfreeze-seconds: 60
+
+# ----------------------------------------------------------
+# Lag-based freeze (Folia-style real-cost detection, 1.2.0)
+# A chunk is auto-frozen ONLY when the server is genuinely lagging AND
+# the chunk itself is measurably expensive for several seconds in a row.
+# Raw update counts alone never freeze a chunk anymore.
+# ----------------------------------------------------------
+# Server is treated as "lagging" once its average tick time (MSPT) rises
+# above this many milliseconds (50 ms = a perfect 20 TPS).
+server-mspt-threshold: 45.0
+# Minimum per-chunk cost (ms/tick) for a chunk to count as a lag culprit.
+chunk-mspt-threshold: 8.0
+# The lag condition must persist this many seconds before freezing.
+sustained-lag-seconds: 3
+
+# A chunk is frozen ONLY when it really costs the server time
+# (chunk-mspt-threshold above) while the server is lagging. The number of block
+# updates per second NEVER freezes anything by itself - 100, 400 or 5000
+# updates per second are fine as long as they are cheap.
+# This value is only used to pick which active chunks are inspected/grouped
+# into one machine, not to freeze them:
+culprit-min-updates-per-second: 400
+# Minimum mechanism blocks (redstone, pistons, sculk sensors, trapdoors,
+# doors, rails, note blocks, etc.) a chunk must contain to be frozen:
+culprit-min-mechanisms: 30
+# Server MSPT (ms) treated as "no lag" when estimating per-chunk cost.
+baseline-mspt: 20.0
+# Allow the global safety net at all. When false the plugin only ever freezes
+# the guilty chunks, never the whole server's redstone.
+global-freeze-enabled: true
+# If the server is STILL below critical TPS this many seconds after the LAST
+# per-chunk freeze, temporarily freeze ALL redstone until it recovers.
+global-freeze-after-seconds: 10
+
+# Group adjacent active chunks into a single machine so a lag build spread
+# across several chunks is detected and frozen as a whole (updates and
+# mechanisms are summed across the cluster). Set false to judge each chunk
+# on its own.
+merge-adjacent-chunks: true
+
+# ----------------------------------------------------------
+# Internal version stamp - do not edit.
+# ----------------------------------------------------------
+config-version: "1.2.0"

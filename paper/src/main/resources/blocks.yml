@@ -1,0 +1,38 @@
+# ==========================================================
+#  RedstoneDetector - blocks.yml
+#  List of redstone / lag-related blocks used by the scanner.
+#  Any material name that does not exist on your Minecraft
+#  version is automatically skipped (no errors on startup).
+# ==========================================================
+
+# Core redstone components counted by the scanner.
+redstone-blocks:
+  - REDSTONE_WIRE
+  - REPEATER
+  - COMPARATOR
+  - PISTON
+  - STICKY_PISTON
+  - OBSERVER
+  - DISPENSER
+  - DROPPER
+  - HOPPER
+  - REDSTONE_TORCH
+  - REDSTONE_BLOCK
+  - LEVER
+  - STONE_BUTTON
+  - OAK_BUTTON
+  - TRIPWIRE_HOOK
+  - TARGET
+
+# Blocks that only exist on newer versions.
+# They are added only if present on the running server.
+optional-blocks:
+  - SCULK_SENSOR
+  - CALIBRATED_SCULK_SENSOR
+  - CRAFTER
+  - COPPER_BULB
+
+# ----------------------------------------------------------
+# Internal version stamp - do not edit.
+# ----------------------------------------------------------
+config-version: "1.2.0"

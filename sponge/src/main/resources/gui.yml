@@ -1,0 +1,22 @@
+# ==========================================================
+#  RedstoneDetector - gui.yml
+#  Appearance settings for the administrator interface.
+# ==========================================================
+
+# Use colored indicators (green / yellow / red) in the GUI.
+use-color-indicators: true
+
+# Title of the main dashboard.
+dashboard-title: "&8\u00bb &cRedstone&fDetector &8\u00ab"
+
+# Title of the chunk information menu.
+chunk-info-title: "&8Chunk Info"
+
+# Approximate-load thresholds (redstone + entities*2 heuristic).
+load-medium-threshold: 150
+load-high-threshold: 400
+
+# ----------------------------------------------------------
+# Internal version stamp - do not edit.
+# ----------------------------------------------------------
+config-version: "1.2.0"

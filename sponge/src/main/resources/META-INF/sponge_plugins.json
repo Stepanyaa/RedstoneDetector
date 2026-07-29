@@ -1,0 +1,26 @@
+{
+  "loader": {
+    "name": "java_plain",
+    "version": "1.0"
+  },
+  "license": "MIT",
+  "global": {
+    "version": "1.2.0",
+    "links": {
+      "homepage": "https://discord.com/invite/PXDzCQZUch"
+    },
+    "contributors": [
+      {
+        "name": "Stepanyaa"
+      }
+    ]
+  },
+  "plugins": [
+    {
+      "id": "redstonedetector",
+      "name": "RedstoneDetector",
+      "entrypoint": "ru.stepanyaa.redstoneDetector.sponge.SpongeBootstrap",
+      "description": "Finds and stops redstone lag machines by measuring real chunk cost."
+    }
+  ]
+}

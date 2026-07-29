@@ -1,0 +1,55 @@
+# ==========================================================
+#  RedstoneDetector - config.yml (core settings)
+#
+#  Since 1.1.0 the configuration is split into several files:
+#    - config.yml       core detection settings (this file)
+#    - performance.yml  scanning / performance tuning
+#    - blocks.yml       list of redstone / lag blocks
+#    - gui.yml          administrator interface appearance
+#    - lang/messages_<code>.yml   all localized messages
+#  Translatable in-game messages live in the lang/ folder.
+# ==========================================================
+
+# Language for messages.
+# Bundled: en_us, ru_ru, de_de, fr_fr, tr_tr, pl_pl, pt_br
+# Change it live with /rd lang <code>; list all options with /rd lang list.
+# Custom translation: drop your own lang/<locale>.yml (e.g. lang/uk_ua.yml)
+# into the lang folder; it is detected automatically. Missing keys use English.
+# Join our Discord to help translate: https://discord.gg/72mzBTckKC
+language: en_us
+# Use each player's own client language (the locale Minecraft sends on join).
+# true  - a Russian client sees Russian, a German client sees German, and so on,
+#         as long as lang/<locale>.yml exists for it (ru_ru.yml, de_de.yml).
+#         A de_at client is served de_de; unknown locales use the server
+#         language set above.
+# false - the server language above is used for everyone.
+# Console output and log lines always use the server language.
+per-player-language: true
+
+# Critical TPS level for freezing.
+critical-tps: 15.0
+
+# The maximum allowed amount of redstone in a chunk.
+max-redstone: 100
+
+# Maximum allowed number of entities in a chunk.
+max-entities: 100
+
+# Time (seconds) after which redstone unfreezes at low TPS. -1 = never.
+freeze-duration: 300
+
+# Chunk data storage time (hours).
+chunk-data-retention: 24
+
+# ----------------------------------------------------------
+# NOTE: performance keys (chunks-per-tick, scan-on-low-tps,
+# scan-loaded-chunks, heavy-scan-*) moved to performance.yml.
+# They are still read from here as a fallback for old setups.
+# ----------------------------------------------------------
+
+# ----------------------------------------------------------
+# Internal version stamp. Do not edit by hand.
+# On startup any NEW options from an update are added automatically
+# while your existing values are kept untouched.
+# ----------------------------------------------------------
+config-version: "1.2.0"
