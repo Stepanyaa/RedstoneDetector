@@ -31,13 +31,13 @@ public final class SpongeConfig {
     private final Set<String> mechanisms = new HashSet<String>();
 
     public SpongeConfig(File folder, Logger logger) {
-        this(folder, logger, "1.2.0");
+        this(folder, logger, "1.3.0");
     }
 
     public SpongeConfig(File folder, Logger logger, String version) {
         this.folder = folder;
         this.logger = logger;
-        this.version = version == null || version.isEmpty() ? "1.2.0" : version;
+        this.version = version == null || version.isEmpty() ? "1.3.0" : version;
     }
 
     public void reload() {

@@ -26,13 +26,17 @@ public class GuiManager implements Listener, InventoryHolder {
     public enum SortMode {
         COORDINATE, REDSTONE, ENTITIES
     }
+
+    public enum HistoryFilter {
+        ALL, REMOVE, PLACE, INTERACT
+    }
     @Override
     public Inventory getInventory() {
         return null;
     }
 
     public enum GuiState {
-        WORLD_SELECTION, CHUNK_LIST, CHUNK_ACTIONS, DASHBOARD, CHUNK_INFO, FROZEN_LIST
+        WORLD_SELECTION, CHUNK_LIST, CHUNK_ACTIONS, DASHBOARD, CHUNK_INFO, FROZEN_LIST, CHUNK_HISTORY
     }
 
     public static class PlayerGuiState {
@@ -42,10 +46,15 @@ public class GuiManager implements Listener, InventoryHolder {
         public ChunkCoordinate chunkCoord;
         public SortMode sortMode;
         public java.util.List<ChunkCoordinate> frozenView;
+        public int historyPage;
+        public HistoryFilter historyFilter;
+        public java.util.List<CoreProtectBridge.HistoryEntry> historyEntries;
 
         public PlayerGuiState(GuiState state) {
             this.state = state;
             this.sortMode = SortMode.COORDINATE;
+            this.historyFilter = HistoryFilter.ALL;
+            this.historyEntries = Collections.emptyList();
         }
     }
 
@@ -278,7 +287,7 @@ public class GuiManager implements Listener, InventoryHolder {
         org.bukkit.configuration.file.FileConfiguration guiCfg = plugin.getFileManager().getGui();
         String rawTitle = guiCfg != null ? guiCfg.getString("chunk-info-title", "&cChunk Information")
                 : "Chunk Information";
-        Inventory gui = Bukkit.createInventory(this, 27, ChatColor.translateAlternateColorCodes('&', rawTitle));
+        Inventory gui = Bukkit.createInventory(this, 36, ChatColor.translateAlternateColorCodes('&', rawTitle));
 
         ChunkData data = plugin.getChunkData(coord);
         int redstone = data != null ? data.redstoneCount.get() : 0;
@@ -340,6 +349,24 @@ public class GuiManager implements Listener, InventoryHolder {
         lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.reason", "Reason: ") + ChatColor.WHITE + reason);
         lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.detected", "Detected: ") + ChatColor.WHITE + detected);
         lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.load", "Approx. load: ") + loadLabel);
+
+                CoreProtectBridge cp = plugin.getCoreProtectBridge();
+        final boolean cpAvailable = cp != null && cp.isAvailable();
+        if (cpAvailable) {
+            lore.add("");
+            lore.add(ChatColor.DARK_AQUA + plugin.getMessage(player, "gui.chunkinfo.owner_header", "— Ownership (CoreProtect) —"));
+            lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.possible_owner", "Possible owner: ")
+                    + ChatColor.YELLOW + plugin.getMessage(player, "gui.chunkinfo.loading", "Loading..."));
+            lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.last_builder", "Last builder: ")
+                    + ChatColor.YELLOW + plugin.getMessage(player, "gui.chunkinfo.loading", "Loading..."));
+            lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.last_modified", "Last modified: ")
+                    + ChatColor.YELLOW + plugin.getMessage(player, "gui.chunkinfo.loading", "Loading..."));
+            lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.last_redstone", "Last redstone placement: ")
+                    + ChatColor.YELLOW + plugin.getMessage(player, "gui.chunkinfo.loading", "Loading..."));
+            lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.placed", "Placed: ")
+                    + ChatColor.YELLOW + plugin.getMessage(player, "gui.chunkinfo.loading", "Loading..."));
+        }
+
         gui.setItem(4, loreItem(Material.MAP, ChatColor.AQUA + plugin.getMessage(player, "gui.chunkinfo.title", "Chunk {coord}").replace("{coord}", coord.toDisplayString()), lore));
 
         gui.setItem(10, dashButton(player, Material.ENDER_PEARL, "gui.chunk_teleport", "&fTeleport to Chunk",
@@ -364,6 +391,11 @@ public class GuiManager implements Listener, InventoryHolder {
         gui.setItem(16, dashButton(player, Material.BLAZE_ROD, "gui.chunkinfo.remove_entities", "&6Remove Entities",
                 Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.remove_entities_lore", "Remove all non-player entities here."))));
 
+                if (cpAvailable) {
+            gui.setItem(20, dashButton(player, Material.BOOK, "gui.chunkinfo.history", "&eHistory",
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.history_lore", "View recent changes in this chunk."))));
+        }
+
         gui.setItem(22, dashButton(player, Material.ARROW, "gui.chunkinfo.back_list", "&7Back to Chunk List",
                 Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.chunkinfo.back_list_lore", "Return to the chunk list."))));
 
@@ -373,8 +405,213 @@ public class GuiManager implements Listener, InventoryHolder {
         state.world = coord.world();
         state.page = prev != null ? prev.page : 0;
         state.sortMode = (prev != null && prev.sortMode != null) ? prev.sortMode : SortMode.COORDINATE;
+        state.historyPage = 0;
+        state.historyFilter = HistoryFilter.ALL;
         playerStates.put(player.getUniqueId(), state);
         player.openInventory(gui);
+
+                if (cpAvailable) {
+            final UUID playerId = player.getUniqueId();
+            final Inventory openGui = gui;
+            cp.lookupChunkAsync(coord).thenAccept(info -> {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    Player p = Bukkit.getPlayer(playerId);
+                    if (p == null || !p.isOnline()) return;
+                    PlayerGuiState st = playerStates.get(playerId);
+                    if (st == null || st.state != GuiState.CHUNK_INFO || st.chunkCoord == null
+                            || !st.chunkCoord.equals(coord)) return;
+                    Inventory top = p.getOpenInventory().getTopInventory();
+                    if (top == null || top != openGui) return;
+
+                                        ItemStack map = top.getItem(4);
+                    if (map == null || !map.hasItemMeta()) return;
+                    ItemMeta meta = map.getItemMeta();
+                    List<String> currentLore = meta.getLore() != null ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+
+                                        int headerIdx = -1;
+                    String headerPrefix = ChatColor.DARK_AQUA.toString();
+                    for (int i = 0; i < currentLore.size(); i++) {
+                        if (currentLore.get(i) != null && currentLore.get(i).startsWith(headerPrefix)) {
+                            headerIdx = i;
+                            break;
+                        }
+                    }
+                    if (headerIdx >= 0) {
+                        while (currentLore.size() > headerIdx) {
+                            currentLore.remove(currentLore.size() - 1);
+                        }
+                    }
+
+                    String unknown = plugin.getMessage(p, "gui.chunkinfo.unknown", "unknown");
+                    CoreProtectBridge bridge = plugin.getCoreProtectBridge();
+                    currentLore.add("");
+                    currentLore.add(ChatColor.DARK_AQUA + plugin.getMessage(p, "gui.chunkinfo.owner_header", "— Ownership (CoreProtect) —"));
+                    currentLore.add(ChatColor.GRAY + plugin.getMessage(p, "gui.chunkinfo.possible_owner", "Possible owner: ")
+                            + ChatColor.YELLOW + (info.possibleOwner != null ? info.possibleOwner : unknown));
+                    currentLore.add(ChatColor.GRAY + plugin.getMessage(p, "gui.chunkinfo.last_builder", "Last builder: ")
+                            + ChatColor.YELLOW + (info.lastBuilder != null ? info.lastBuilder : unknown));
+                    currentLore.add(ChatColor.GRAY + plugin.getMessage(p, "gui.chunkinfo.last_modified", "Last modified: ")
+                            + ChatColor.WHITE + (info.lastModified > 0 ? bridge.formatTimeAgo(p, info.lastModified) : unknown));
+                    currentLore.add(ChatColor.GRAY + plugin.getMessage(p, "gui.chunkinfo.last_redstone", "Last redstone placement: ")
+                            + ChatColor.YELLOW + (info.lastRedstonePlacer != null ? info.lastRedstonePlacer : unknown));
+                    currentLore.add(ChatColor.GRAY + plugin.getMessage(p, "gui.chunkinfo.placed", "Placed: ")
+                            + ChatColor.WHITE + (info.lastRedstonePlacement > 0 ? bridge.formatTimeAgo(p, info.lastRedstonePlacement) : unknown));
+
+                    meta.setLore(currentLore);
+                    map.setItemMeta(meta);
+                    top.setItem(4, map);
+                });
+            });
+        }
+    }
+
+    public void openChunkHistoryGui(Player player, ChunkCoordinate coord) {
+        markTransition(player);
+        String rawTitle = plugin.getMessage(player, "gui.history.title", "&eChunk History {coord}")
+                .replace("{coord}", coord.toDisplayString());
+        Inventory gui = Bukkit.createInventory(this, 54, ChatColor.translateAlternateColorCodes('&', rawTitle));
+
+                gui.setItem(22, loreItem(Material.PAPER,
+                ChatColor.YELLOW + plugin.getMessage(player, "gui.history.loading", "Loading history..."),
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.loading_lore", "Querying CoreProtect..."))));
+
+        gui.setItem(49, dashButton(player, Material.ARROW, "gui.history.back", "&7Back to Chunk Info",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.back_lore", "Return to chunk details."))));
+
+        PlayerGuiState prev = playerStates.get(player.getUniqueId());
+        PlayerGuiState state = new PlayerGuiState(GuiState.CHUNK_HISTORY);
+        state.chunkCoord = coord;
+        state.world = coord.world();
+        state.page = prev != null ? prev.page : 0;
+        state.sortMode = (prev != null && prev.sortMode != null) ? prev.sortMode : SortMode.COORDINATE;
+        playerStates.put(player.getUniqueId(), state);
+        player.openInventory(gui);
+
+        CoreProtectBridge cp = plugin.getCoreProtectBridge();
+        if (cp == null || !cp.isAvailable()) {
+            gui.setItem(22, loreItem(Material.BARRIER,
+                    ChatColor.RED + plugin.getMessage(player, "gui.history.unavailable", "CoreProtect unavailable"),
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.unavailable_lore", "Install CoreProtect to see history."))));
+            return;
+        }
+
+        final UUID playerId = player.getUniqueId();
+        final Inventory openGui = gui;
+        cp.lookupChunkAsync(coord).thenAccept(info -> {
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                Player p = Bukkit.getPlayer(playerId);
+                if (p == null || !p.isOnline()) return;
+                PlayerGuiState st = playerStates.get(playerId);
+                if (st == null || st.state != GuiState.CHUNK_HISTORY || st.chunkCoord == null
+                        || !st.chunkCoord.equals(coord)) return;
+                Inventory top = p.getOpenInventory().getTopInventory();
+                if (top == null || top != openGui) return;
+
+                st.historyEntries = info.history == null
+                        ? Collections.emptyList()
+                        : new ArrayList<>(info.history);
+                renderChunkHistoryGui(p, top, st, cp);
+            });
+        });
+    }
+
+    private void renderChunkHistoryGui(Player player, Inventory gui, PlayerGuiState state,
+                                       CoreProtectBridge cp) {
+        final int perPage = 45;
+        for (int slot = 0; slot < 54; slot++) gui.setItem(slot, null);
+
+        List<CoreProtectBridge.HistoryEntry> filtered = new ArrayList<>();
+        for (CoreProtectBridge.HistoryEntry entry : state.historyEntries) {
+            if (matchesHistoryFilter(entry, state.historyFilter)) filtered.add(entry);
+        }
+
+        int totalPages = Math.max(1, (int) Math.ceil((double) filtered.size() / perPage));
+        state.historyPage = Math.max(0, Math.min(state.historyPage, totalPages - 1));
+
+        if (filtered.isEmpty()) {
+            gui.setItem(22, loreItem(Material.PAPER,
+                    ChatColor.YELLOW + plugin.getMessage(player, "gui.history.empty", "No history found"),
+                    Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.empty_lore", "No block changes logged in this chunk."))));
+        } else {
+            int start = state.historyPage * perPage;
+            int end = Math.min(start + perPage, filtered.size());
+            for (int i = start; i < end; i++) {
+                gui.setItem(i - start, buildHistoryEntry(player, cp, filtered.get(i)));
+            }
+        }
+
+        if (state.historyPage > 0) {
+            gui.setItem(45, dashButton(player, Material.ARROW, "gui.previous_page", "&ePrevious Page", Collections.emptyList()));
+        }
+        gui.setItem(46, historyFilterButton(player, Material.IRON_PICKAXE, HistoryFilter.REMOVE,
+                "gui.history.filter_remove", "&cBroke", state.historyFilter));
+        gui.setItem(47, historyFilterButton(player, Material.GRASS_BLOCK, HistoryFilter.PLACE,
+                "gui.history.filter_place", "&aPlaced", state.historyFilter));
+        gui.setItem(48, historyFilterButton(player, Material.LEVER, HistoryFilter.INTERACT,
+                "gui.history.filter_interact", "&bInteracted", state.historyFilter));
+        gui.setItem(49, dashButton(player, Material.BARRIER, "gui.history.back", "&7Back to Chunk Info",
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.back_lore", "Return to chunk details."))));
+        gui.setItem(50, historyFilterButton(player, Material.BOOK, HistoryFilter.ALL,
+                "gui.history.filter_all", "&eAll actions", state.historyFilter));
+        gui.setItem(51, loreItem(Material.PAPER,
+                ChatColor.YELLOW + plugin.getMessage(player, "gui.history.page", "Page {page}/{pages}")
+                        .replace("{page}", Integer.toString(state.historyPage + 1))
+                        .replace("{pages}", Integer.toString(totalPages)),
+                Collections.singletonList(ChatColor.GRAY + plugin.getMessage(player, "gui.history.results", "{count} results")
+                        .replace("{count}", Integer.toString(filtered.size())))));
+        if (state.historyPage < totalPages - 1) {
+            gui.setItem(53, dashButton(player, Material.ARROW, "gui.next_page", "&eNext Page", Collections.emptyList()));
+        }
+    }
+
+    private boolean matchesHistoryFilter(CoreProtectBridge.HistoryEntry entry, HistoryFilter filter) {
+        if (filter == null || filter == HistoryFilter.ALL) return true;
+        if (filter == HistoryFilter.REMOVE) return "remove".equals(entry.action);
+        if (filter == HistoryFilter.PLACE) return "place".equals(entry.action);
+        return "interact".equals(entry.action);
+    }
+
+    private ItemStack historyFilterButton(Player player, Material material, HistoryFilter buttonFilter,
+                                          String key, String fallback, HistoryFilter selectedFilter) {
+        boolean selected = buttonFilter == selectedFilter;
+        String name = (selected ? ChatColor.GREEN + "✓ " : ChatColor.GRAY + "")
+                + ChatColor.translateAlternateColorCodes('&', plugin.getMessage(player, key, fallback));
+        String lore = selected
+                ? ChatColor.GREEN + plugin.getMessage(player, "gui.history.filter_active", "Active filter")
+                : ChatColor.GRAY + plugin.getMessage(player, "gui.history.filter_click", "Click to filter");
+        return loreItem(material, name, Collections.singletonList(lore));
+    }
+
+    private ItemStack buildHistoryEntry(Player player, CoreProtectBridge cp,
+                                        CoreProtectBridge.HistoryEntry entry) {
+        Material icon = Material.STONE;
+        try {
+            Material material = Material.matchMaterial(entry.material);
+            if (material != null && material.isItem()) icon = material;
+            else if ("place".equals(entry.action)) icon = Material.GRASS_BLOCK;
+            else if ("remove".equals(entry.action)) icon = Material.IRON_PICKAXE;
+        } catch (Throwable ignored) {}
+
+        String actionLabel;
+        ChatColor actionColor;
+        if ("place".equals(entry.action)) {
+            actionLabel = plugin.getMessage(player, "gui.history.action_place", "placed");
+            actionColor = ChatColor.GREEN;
+        } else if ("remove".equals(entry.action)) {
+            actionLabel = plugin.getMessage(player, "gui.history.action_remove", "removed");
+            actionColor = ChatColor.RED;
+        } else {
+            actionLabel = plugin.getMessage(player, "gui.history.action_interact", "interacted");
+            actionColor = ChatColor.AQUA;
+        }
+
+        List<String> lore = new ArrayList<>();
+        lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.history.player", "Player: ") + ChatColor.YELLOW + entry.player);
+        lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.history.action", "Action: ") + actionColor + actionLabel);
+        lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.history.block", "Block: ") + ChatColor.WHITE + entry.material);
+        lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.history.coords", "At: ") + ChatColor.WHITE + entry.x + ", " + entry.y + ", " + entry.z);
+        lore.add(ChatColor.GRAY + plugin.getMessage(player, "gui.history.when", "When: ") + ChatColor.WHITE + cp.formatTimeAgo(player, entry.timestamp));
+        return loreItem(icon, actionColor + entry.player + " " + actionLabel + " " + ChatColor.WHITE + entry.material, lore);
     }
 
     private String dashboardTimeAgo(Player player, long t) {
@@ -462,6 +699,52 @@ public class GuiManager implements Listener, InventoryHolder {
         } else if (s.equals(dashName(player, "gui.chunkinfo.remove_entities", "&6Remove Entities"))) {
             plugin.removeEntitiesInChunk(player, coord);
             openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName(player, "gui.chunkinfo.history", "&eHistory"))) {
+            openChunkHistoryGui(player, coord);
+        }
+    }
+
+    private void handleChunkHistoryClick(Player player, PlayerGuiState state, String displayName) {
+        String s = ChatColor.stripColor(displayName);
+        ChunkCoordinate coord = state.chunkCoord;
+        if (coord == null) return;
+        if (s.equals(dashName(player, "gui.history.back", "&7Back to Chunk Info"))) {
+            openChunkInfoGui(player, coord);
+        } else if (s.equals(dashName(player, "gui.previous_page", "&ePrevious Page"))) {
+            state.historyPage--;
+            refreshChunkHistory(player, state);
+        } else if (s.equals(dashName(player, "gui.next_page", "&eNext Page"))) {
+            state.historyPage++;
+            refreshChunkHistory(player, state);
+        } else if (s.equals(stripHistoryFilterMarker(dashName(player, "gui.history.filter_remove", "&cBroke")))) {
+            state.historyFilter = HistoryFilter.REMOVE;
+            state.historyPage = 0;
+            refreshChunkHistory(player, state);
+        } else if (s.equals(stripHistoryFilterMarker(dashName(player, "gui.history.filter_place", "&aPlaced")))) {
+            state.historyFilter = HistoryFilter.PLACE;
+            state.historyPage = 0;
+            refreshChunkHistory(player, state);
+        } else if (s.equals(stripHistoryFilterMarker(dashName(player, "gui.history.filter_interact", "&bInteracted")))) {
+            state.historyFilter = HistoryFilter.INTERACT;
+            state.historyPage = 0;
+            refreshChunkHistory(player, state);
+        } else if (s.equals(stripHistoryFilterMarker(dashName(player, "gui.history.filter_all", "&eAll actions")))) {
+            state.historyFilter = HistoryFilter.ALL;
+            state.historyPage = 0;
+            refreshChunkHistory(player, state);
+        }
+    }
+
+    private String stripHistoryFilterMarker(String value) {
+        return value.startsWith("✓ ") ? value.substring(2) : value;
+    }
+
+    private void refreshChunkHistory(Player player, PlayerGuiState state) {
+        CoreProtectBridge cp = plugin.getCoreProtectBridge();
+        Inventory top = player.getOpenInventory().getTopInventory();
+        if (cp != null && top != null && top.getHolder() instanceof GuiManager) {
+            renderChunkHistoryGui(player, top, state, cp);
+            player.updateInventory();
         }
     }
 
@@ -850,6 +1133,9 @@ public class GuiManager implements Listener, InventoryHolder {
                 break;
             case CHUNK_INFO:
                 handleChunkInfoClick(player, state, displayName);
+                break;
+            case CHUNK_HISTORY:
+                handleChunkHistoryClick(player, state, displayName);
                 break;
             case FROZEN_LIST:
                 handleFrozenListClick(player, state, displayName, event.getSlot());

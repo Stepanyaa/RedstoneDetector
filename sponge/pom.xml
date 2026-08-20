@@ -1,5 +1,5 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion><parent><groupId>ru.stepanyaa</groupId><artifactId>redstonedetector-parent</artifactId><version>1.2.0</version></parent>
+  <modelVersion>4.0.0</modelVersion><parent><groupId>ru.stepanyaa</groupId><artifactId>redstonedetector-parent</artifactId><version>1.3.0</version></parent>
   <artifactId>redstonedetector-sponge</artifactId><name>RedstoneDetector Sponge</name>
   <repositories>
     <repository><id>sponge-repo</id><url>https://repo.spongepowered.org/repository/maven-public/</url></repository>
@@ -7,11 +7,11 @@
     <repository><id>faststats-releases</id><name>FastStats</name><url>https://repo.faststats.dev/releases</url></repository>
   </repositories>
   <dependencies>
-    <dependency><groupId>ru.stepanyaa</groupId><artifactId>redstonedetector-common</artifactId><version>1.2.0</version></dependency>
+    <dependency><groupId>ru.stepanyaa</groupId><artifactId>redstonedetector-common</artifactId><version>1.3.0</version></dependency>
     <dependency><groupId>org.spongepowered</groupId><artifactId>spongeapi</artifactId><version>13.0.0</version><scope>provided</scope></dependency>
     <dependency><groupId>dev.faststats.metrics</groupId><artifactId>sponge</artifactId><version>0.29.0</version></dependency>
   </dependencies>
-  <build><finalName>RedstoneDetector-Sponge-1.2.0</finalName><plugins>
+  <build><finalName>RedstoneDetector-Sponge-1.3.0</finalName><plugins>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.15.0</version><configuration><release>21</release></configuration></plugin>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.2</version><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom><artifactSet><includes><include>ru.stepanyaa:redstonedetector-common</include><include>dev.faststats.metrics:*</include><include>dev.faststats.metrics.j8:*</include></includes></artifactSet><relocations><relocation><pattern>dev.faststats</pattern><shadedPattern>ru.stepanyaa.redstoneDetector.libs.faststats</shadedPattern></relocation></relocations></configuration></execution></executions></plugin>
   </plugins></build>

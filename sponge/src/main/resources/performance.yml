@@ -114,7 +114,7 @@ cost-estimate-min-updates-per-second: 40
 # ----------------------------------------------------------
 # Internal version stamp - do not edit.
 # ----------------------------------------------------------
-config-version: "1.2.0"
+config-version: "1.3.0"
 
 # Time (microseconds) one chunk scan may spend on the server thread before it
 # pauses and continues on the next pass. A full chunk means ~100k block reads,

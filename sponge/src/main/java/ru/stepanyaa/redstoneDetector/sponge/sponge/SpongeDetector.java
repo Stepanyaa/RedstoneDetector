@@ -64,7 +64,7 @@ public final class SpongeDetector {
 
     public SpongeDetector(Object pluginContainer, File folder, Logger logger)
             throws ReflectiveOperationException {
-        this(pluginContainer, folder, logger, "1.2.0");
+        this(pluginContainer, folder, logger, "1.3.0");
     }
 
     public SpongeDetector(Object pluginContainer, File folder, Logger logger, String version)

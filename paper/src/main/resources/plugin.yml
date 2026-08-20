@@ -1,5 +1,5 @@
 name: RedstoneDetector
-version: '1.2.0'
+version: '1.3.0'
 main: ru.stepanyaa.redstoneDetector.RedstoneDetector
 api-version: "1.16"
 # One jar for every core: Bukkit, Spigot, Paper, Purpur and Folia.
@@ -7,6 +7,7 @@ folia-supported: true
 authors: [Stepanyaa]
 description: A plugin for protecting servers from lag machines.
 website: https://discord.com/invite/PXDzCQZUch
+softdepend: [CoreProtect]
 commands:
   redstonedetector:
     description: The main plugin command

@@ -62,6 +62,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
     private GuiManager guiManager;
     private FileManager fileManager;
     private ScanManager scanManager;
+    private CoreProtectBridge coreProtectBridge;
 
     private static boolean isPurpur = false;
     private int lowTpsCounter = 0;
@@ -116,6 +117,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         this.updateChecker = new UpdateChecker(this);
         this.guiManager = new GuiManager(this);
         this.scanManager = new ScanManager(this);
+        this.coreProtectBridge = new CoreProtectBridge(this);
 
         chunkDataFile = new File(getDataFolder(), "chunk-data.yml");
         loadChunkData();
@@ -145,6 +147,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         }
 
         int pluginId = 27778;
+        context.ready();
         new Metrics(this, pluginId);
 
         getLogger().info(getMessage("plugin.enabled", "Plugin successfully enabled!"));
@@ -155,6 +158,7 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
         if (guiManager != null) {
             guiManager.savePlayerStates();
         }
+        context.shutdown();
         saveChunkData();
         Platforms.shutdown();
         getLogger().info(getMessage("plugin.shutdown", "GUI states and chunk data saved"));
@@ -1788,6 +1792,10 @@ public class RedstoneDetector extends JavaPlugin implements Listener, TabComplet
 
     public ScanManager getScanManager() {
         return scanManager;
+    }
+
+    public CoreProtectBridge getCoreProtectBridge() {
+        return coreProtectBridge;
     }
 
     public String formatMessage(String key, String def) {
